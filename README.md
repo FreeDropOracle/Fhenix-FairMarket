@@ -8,10 +8,12 @@
 [![Solidity](https://img.shields.io/badge/Solidity-^0.8.25-363636?logo=solidity)](https://soliditylang.org)
 [![Fhenix](https://img.shields.io/badge/Fhenix-fhEVM-6C3CE1)](https://fhenix.io)
 [![EigenLayer](https://img.shields.io/badge/EigenLayer-AVS-0ea5e9)](https://eigenlayer.xyz)
-[![Status](https://img.shields.io/badge/Status-Audit--Ready-22c55e)]()
+[![Status](https://img.shields.io/badge/Status-Documentation--First-2563eb)]()
 [![Version](https://img.shields.io/badge/Version-2.0-orange)]()
 
 </div>
+
+> Repository state as of April 23, 2026: this repository currently contains architecture documents, execution planning material, and GitHub workflow scaffolding. The contracts, frontend, keeper, and CI paths described below are the target implementation and planned buildout, not code that already exists in this tree.
 
 ---
 
@@ -24,7 +26,7 @@
   - [State Machine](#state-machine)
   - [Component Map](#component-map)
 - [Tech Stack](#-tech-stack)
-- [Project Structure](#-project-structure)
+- [Target Project Structure](#-target-project-structure)
 - [6-Phase Execution Roadmap](#-6-phase-execution-roadmap)
   - [Phase 1 — Architectural Foundation](#-phase-1--architectural-foundation)
   - [Phase 2 — Encrypted Security & Settlement](#-phase-2--encrypted-security--settlement)
@@ -35,9 +37,9 @@
 - [Security Model](#-security-model)
 - [Audit Readiness Matrix](#-audit-readiness-matrix)
 - [Smart Contract Reference](#-smart-contract-reference)
-- [Local Development](#-local-development)
-- [Testing](#-testing)
-- [Deployment](#-deployment)
+- [Planned Local Development](#-planned-local-development)
+- [Planned Testing](#-planned-testing)
+- [Planned Deployment](#-planned-deployment)
 - [Monitoring & KPIs](#-monitoring--kpis)
 - [Governance](#-governance)
 - [Ethics Charter](#-ethics-charter)
@@ -195,7 +197,9 @@ fhenix-fairmarket/
 
 ---
 
-## 📁 Project Structure
+## 📁 Target Project Structure
+
+> This section describes the intended repository layout after the implementation phases are scaffolded. It is not the current file tree on disk.
 
 ```
 fhenix-fairmarket/
@@ -685,7 +689,9 @@ event EmergencyHaltActivated(uint256 indexed auctionId, uint256 timestamp);
 
 ---
 
-## 🛠 Local Development
+## 🛠 Planned Local Development
+
+> These commands are the intended bootstrap flow once the Phase 1 scaffold lands in the repository. They are not runnable against the current tree yet.
 
 ### Prerequisites
 
@@ -735,7 +741,9 @@ pnpm hardhat emergencyHalt --auction-id 1
 
 ---
 
-## 🧪 Testing
+## 🧪 Planned Testing
+
+> The suites below are target coverage and execution plans for the implementation repo. They are documented here so the delivery path is explicit before code lands.
 
 ### Test Architecture
 
@@ -785,7 +793,9 @@ pnpm test
 
 ---
 
-## 🚀 Deployment
+## 🚀 Planned Deployment
+
+> This deployment sequence is the intended release path after the contracts and CI workflows exist in-repo.
 
 ### Fhenix Testnet
 
@@ -796,7 +806,7 @@ pnpm hardhat run packages/contracts/deploy/01_deploy_core_proxy.ts --network fhe
 pnpm hardhat run packages/contracts/deploy/02_setup_factory.ts --network fhenix-testnet
 ```
 
-### CI/CD Pipelines
+### Planned CI/CD Pipelines
 
 | Pipeline | Trigger | Checks |
 |---|---|---|
@@ -877,7 +887,7 @@ Please read [CONTRIBUTING.md](docs/CONTRIBUTING.md) before submitting PRs.
 - Coverage report attached
 - Reviewer: minimum 2 approvals + `security-lead` for any `security`-labeled PR
 
-**Issue templates:** See `.github/ISSUE_TEMPLATE/` for bug reports, feature requests, security vulnerabilities, and phase tracker epics.
+**Issue templates:** `.github/ISSUE_TEMPLATE/` currently includes bug reports and phase tracker epics. Additional templates can be added as implementation work expands.
 
 ---
 

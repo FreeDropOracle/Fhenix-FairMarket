@@ -10,7 +10,7 @@ permissions:
   contents: read
   issues: write
   pull-requests: write
-  repository-projects: write # تم التغيير هنا لإرضاء VS Code
+  repository-projects: write
 
 jobs:
   update-project-board:
@@ -21,10 +21,13 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // Ignore VS Code warnings for the lines below
             const PROJECT_ID = "${{ vars.FFM_PROJECT_ID }}";
             const STATUS_FIELD_ID = "${{ vars.FFM_STATUS_FIELD_ID }}";
             
+            if (!PROJECT_ID || !STATUS_FIELD_ID) {
+              throw new Error("Missing PROJECT_ID or STATUS_FIELD_ID in vars");
+            }
+
             const labelToStatus = {
               'phase-1': '🟦 Phase 1: Architecture',
               'phase-2': '🟨 Phase 2: Security & Settlement',
@@ -39,18 +42,55 @@ jobs:
             const item = isIssue ? context.payload.issue : context.payload.pull_request;
             const labels = (item.labels || []).map(l => l.name);
             
-            let targetStatus = '📋 Backlog';
-            
+            let targetStatusName = '📋 Backlog';
             if (context.payload.action === 'closed' || (item.state === 'closed')) {
-              targetStatus = '✅ Done & Merged';
+              targetStatusName = '✅ Done & Merged';
             } else {
-              const phases = ['phase-6', 'phase-5', 'phase-4', 'phase-3', 'phase-2', 'phase-1'];
-              for (const p of phases) {
-                if (labels.includes(p)) {
-                  targetStatus = labelToStatus[p];
-                  break;
+              for (const [lbl, status] of Object.entries(labelToStatus)) {
+                if (labels.includes(lbl)) { targetStatusName = status; break; }
+              }
+            }
+
+            // 1. Get Project Item ID and Option ID for the target status
+            const query = `query($projectId: ID!, $statusFieldId: ID!) {
+              node(id: $projectId) {
+                ... on ProjectV2 {
+                  field(id: $statusFieldId) {
+                    ... on ProjectV2SingleSelectField {
+                      options { id name }
+                    }
+                  }
                 }
               }
-              if (labels.includes('audit-blocker')) targetStatus = '🔴 Blocked / Audit Gate Failed';
+            }`;
+
+            const result = await github.graphql(query, { projectId: PROJECT_ID, statusFieldId: STATUS_FIELD_ID });
+            const options = result.node.field.options;
+            const targetOption = options.find(o => o.name === targetStatusName);
+
+            if (!targetOption) {
+              console.log(`Target status "${targetStatusName}" not found in project columns.`);
+              return;
             }
-            console.log(`Moving to: ${targetStatus}`);
+
+            // 2. Add/Find item in project and update its status
+            const contentId = isIssue ? context.payload.issue.node_id : context.payload.pull_request.node_id;
+            
+            const addItemMutation = `mutation($projectId: ID!, $contentId: ID!) {
+              addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                item { id }
+              }
+            }`;
+            const addItemResult = await github.graphql(addItemMutation, { projectId: PROJECT_ID, contentId: contentId });
+            const itemId = addItemResult.addProjectV2ItemById.item.id;
+
+            const updateMutation = `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+              updateProjectV2ItemFieldValue(input: {
+                projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId }
+              }) { clientMutationId }
+            }`;
+
+            await github.graphql(updateMutation, {
+              projectId: PROJECT_ID, itemId: itemId, fieldId: STATUS_FIELD_ID, optionId: targetOption.id
+            });
+            console.log(`✅ Successfully moved #${item.number} to "${targetStatusName}"`);

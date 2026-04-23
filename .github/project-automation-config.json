@@ -1,0 +1,15 @@
+{
+  "projectName": "Fhenix-FairMarket | Roadmap & Audit Gates",
+  "statusField": "Status",
+  "columns": [
+    {"name": "📋 Backlog", "rule": "Default for unlabeled issues"},
+    {"name": "🟦 Phase 1: Architecture", "rule": "Label: phase-1"},
+    {"name": "🟨 Phase 2: Security & Settlement", "rule": "Label: phase-2"},
+    {"name": "🟧 Phase 3: CoFHE & AVS", "rule": "Label: phase-3"},
+    {"name": "🟥 Phase 4: Keepers & Infra", "rule": "Label: phase-4"},
+    {"name": "🟪 Phase 5: Frontend & UX", "rule": "Label: phase-5"},
+    {"name": "🟫 Phase 6: Audit & Deploy", "rule": "Label: phase-6"},
+    {"name": "🔴 Blocked / Audit Gate Failed", "rule": "Label: audit-blocker"},
+    {"name": "✅ Done & Merged", "rule": "Issue closed"}
+  ]
+}

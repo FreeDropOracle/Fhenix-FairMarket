@@ -1,0 +1,56 @@
+name: 🔄 Project Board Automation
+
+on:
+  issues:
+    types: [labeled, opened, closed]
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  repository-projects: write # تم التغيير هنا لإرضاء VS Code
+
+jobs:
+  update-project-board:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🗂️ Move Issue/PR to Correct Column
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Ignore VS Code warnings for the lines below
+            const PROJECT_ID = "${{ vars.FFM_PROJECT_ID }}";
+            const STATUS_FIELD_ID = "${{ vars.FFM_STATUS_FIELD_ID }}";
+            
+            const labelToStatus = {
+              'phase-1': '🟦 Phase 1: Architecture',
+              'phase-2': '🟨 Phase 2: Security & Settlement',
+              'phase-3': '🟧 Phase 3: CoFHE & AVS',
+              'phase-4': '🟥 Phase 4: Keepers & Infra',
+              'phase-5': '🟪 Phase 5: Frontend & UX',
+              'phase-6': '🟫 Phase 6: Audit & Deploy',
+              'audit-blocker': '🔴 Blocked / Audit Gate Failed'
+            };
+
+            const isIssue = !!context.payload.issue;
+            const item = isIssue ? context.payload.issue : context.payload.pull_request;
+            const labels = (item.labels || []).map(l => l.name);
+            
+            let targetStatus = '📋 Backlog';
+            
+            if (context.payload.action === 'closed' || (item.state === 'closed')) {
+              targetStatus = '✅ Done & Merged';
+            } else {
+              const phases = ['phase-6', 'phase-5', 'phase-4', 'phase-3', 'phase-2', 'phase-1'];
+              for (const p of phases) {
+                if (labels.includes(p)) {
+                  targetStatus = labelToStatus[p];
+                  break;
+                }
+              }
+              if (labels.includes('audit-blocker')) targetStatus = '🔴 Blocked / Audit Gate Failed';
+            }
+            console.log(`Moving to: ${targetStatus}`);

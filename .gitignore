@@ -1,0 +1,14 @@
+node_modules/
+.env
+coverage/
+coverage.json
+artifacts/
+cache/
+typechain-types/
+packages/*/node_modules/
+packages/*/coverage/
+packages/*/coverage.json
+packages/*/artifacts/
+packages/*/cache/
+packages/*/typechain-types/
+packages/*/deployments/

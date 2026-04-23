@@ -1,0 +1,13 @@
+{
+  "name": "fhenix-fairmarket",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "scripts": {
+    "compile": "pnpm --filter contracts compile",
+    "test": "pnpm --filter contracts test",
+    "coverage": "pnpm --filter contracts coverage"
+  }
+}

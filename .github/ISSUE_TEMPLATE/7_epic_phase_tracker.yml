@@ -2,7 +2,6 @@ name: 🎯 Epic / Phase Tracker / تتبع المرحلة
 description: Master issue for tracking 6-phase execution & audit gates / النموذج الرئيسي لتتبع تنفيذ الـ 6 مراحل وبوابات التدقيق
 title: "[EPIC] Phase X: Title "
 labels: ["epic", "phase-tracker"]
-assignees: ["project-manager"]
 body:
   - type: markdown
     attributes:
@@ -44,3 +43,6 @@ body:
       value: |
         > 🛡️ **Security Note / ملاحظة أمنية**: Each phase must pass its specific Audit Gate before closing this Epic.
         يجب أن تجتاز كل مرحلة بوابة التدقيق الخاصة بها قبل إغلاق هذا التتبع.
+
+        > 📌 **Automation Note / ملاحظة الأتمتة**: The selected phase will be synchronized to the matching `phase-*` label by GitHub automation.
+        سيتم مزامنة المرحلة المختارة تلقائياً مع وسم `phase-*` المطابق عبر أتمتة GitHub.

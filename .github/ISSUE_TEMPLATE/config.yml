@@ -2,4 +2,4 @@ blank_issues_enabled: false
 contact_links:
   - name: 🛡️ Reporting a critical security vulnerability
     url: https://github.com/FreeDropOracle/Fhenix-FairMarket/security/advisories/new
-    about:Use this link to report any security breaches that threaten funds.
+    about: Use this link to report any security breaches that threaten funds.

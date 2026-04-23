@@ -1,0 +1,70 @@
+name: Issue Phase Labeler
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync-phase-label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync phase label from issue form
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || "";
+            const phaseLabels = ["phase-1", "phase-2", "phase-3", "phase-4", "phase-5", "phase-6"];
+            const existingPhaseLabels = (issue.labels || [])
+              .map((label) => label.name)
+              .filter((label) => phaseLabels.includes(label));
+
+            const phaseSectionPatterns = [
+              /###\s*Current Implementation Phase[^\n]*\n+([^\n]+)/i,
+              /###\s*Phase Number[^\n]*\n+([^\n]+)/i
+            ];
+
+            let selectedPhaseText = null;
+            for (const pattern of phaseSectionPatterns) {
+              const sectionMatch = body.match(pattern);
+              if (sectionMatch) {
+                selectedPhaseText = sectionMatch[1].trim();
+                break;
+              }
+            }
+
+            const match = (selectedPhaseText || body).match(/\bPhase\s+([1-6])\b/i);
+            if (!match) {
+              console.log(`No phase selection found for #${issue.number}; leaving labels unchanged.`);
+              return;
+            }
+
+            const desiredPhaseLabel = `phase-${match[1]}`;
+            const labelsToRemove = existingPhaseLabels.filter((label) => label !== desiredPhaseLabel);
+
+            if (labelsToRemove.length > 0) {
+              for (const label of labelsToRemove) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  name: label
+                });
+              }
+            }
+
+            if (!issue.labels.some((label) => label.name === desiredPhaseLabel)) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: [desiredPhaseLabel]
+              });
+            }
+
+            console.log(`Synchronized #${issue.number} to ${desiredPhaseLabel}`);

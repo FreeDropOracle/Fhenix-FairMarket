@@ -1,10 +1,10 @@
-name: 🔄 Project Board Automation
+name: Project Board Automation
 
 on:
   issues:
-    types: [labeled, opened, closed]
+    types: [opened, reopened, closed, labeled, unlabeled]
   pull_request_target:
-    types: [closed]
+    types: [opened, reopened, closed, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -16,81 +16,163 @@ jobs:
   update-project-board:
     runs-on: ubuntu-latest
     steps:
-      - name: 🗂️ Move Issue/PR to Correct Column
+      - name: Move issue or PR to the correct project column
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const PROJECT_ID = "${{ vars.FFM_PROJECT_ID }}";
             const STATUS_FIELD_ID = "${{ vars.FFM_STATUS_FIELD_ID }}";
-            
+
             if (!PROJECT_ID || !STATUS_FIELD_ID) {
-              throw new Error("Missing PROJECT_ID or STATUS_FIELD_ID in vars");
+              throw new Error("Missing FFM_PROJECT_ID or FFM_STATUS_FIELD_ID repository variables.");
             }
 
-            const labelToStatus = {
-              'phase-1': '🟦 Phase 1: Architecture',
-              'phase-2': '🟨 Phase 2: Security & Settlement',
-              'phase-3': '🟧 Phase 3: CoFHE & AVS',
-              'phase-4': '🟥 Phase 4: Keepers & Infra',
-              'phase-5': '🟪 Phase 5: Frontend & UX',
-              'phase-6': '🟫 Phase 6: Audit & Deploy',
-              'audit-blocker': '🔴 Blocked / Audit Gate Failed'
-            };
+            const BACKLOG_STATUS = "📋 Backlog";
+            const BLOCKED_STATUS = "🔴 Blocked / Audit Gate Failed";
+            const DONE_STATUS = "✅ Done & Merged";
+            const phaseStatuses = [
+              ["phase-1", "🟦 Phase 1: Architecture"],
+              ["phase-2", "🟨 Phase 2: Security & Settlement"],
+              ["phase-3", "🟧 Phase 3: CoFHE & AVS"],
+              ["phase-4", "🟥 Phase 4: Keepers & Infra"],
+              ["phase-5", "🟪 Phase 5: Frontend & UX"],
+              ["phase-6", "🟫 Phase 6: Audit & Deploy"]
+            ];
 
             const isIssue = !!context.payload.issue;
             const item = isIssue ? context.payload.issue : context.payload.pull_request;
-            const labels = (item.labels || []).map(l => l.name);
-            
-            let targetStatusName = '📋 Backlog';
-            if (context.payload.action === 'closed' || (item.state === 'closed')) {
-              targetStatusName = '✅ Done & Merged';
-            } else {
-              for (const [lbl, status] of Object.entries(labelToStatus)) {
-                if (labels.includes(lbl)) { targetStatusName = status; break; }
+            const labels = new Set((item.labels || []).map((label) => label.name));
+            const isClosed = item.state === "closed";
+            const isMergedPr = !isIssue && Boolean(item.merged);
+
+            function resolveTargetStatus() {
+              if (isClosed) {
+                if (isIssue || isMergedPr) {
+                  return DONE_STATUS;
+                }
+
+                return BACKLOG_STATUS;
               }
+
+              if (labels.has("audit-blocker")) {
+                return BLOCKED_STATUS;
+              }
+
+              for (const [label, status] of phaseStatuses) {
+                if (labels.has(label)) {
+                  return status;
+                }
+              }
+
+              return BACKLOG_STATUS;
             }
 
-            // 1. Get Project Item ID and Option ID for the target status
-            const query = `query($projectId: ID!, $statusFieldId: ID!) {
-              node(id: $projectId) {
-                ... on ProjectV2 {
-                  field(id: $statusFieldId) {
-                    ... on ProjectV2SingleSelectField {
-                      options { id name }
+            async function getStatusOptionId(statusName) {
+              const query = `query($projectId: ID!, $statusFieldId: ID!) {
+                node(id: $projectId) {
+                  ... on ProjectV2 {
+                    field(id: $statusFieldId) {
+                      ... on ProjectV2SingleSelectField {
+                        options { id name }
+                      }
                     }
                   }
                 }
+              }`;
+
+              const result = await github.graphql(query, {
+                projectId: PROJECT_ID,
+                statusFieldId: STATUS_FIELD_ID
+              });
+
+              const option = result.node.field.options.find((entry) => entry.name === statusName);
+              return option?.id;
+            }
+
+            async function findExistingProjectItemId(contentId) {
+              const query = `query($projectId: ID!, $cursor: String) {
+                node(id: $projectId) {
+                  ... on ProjectV2 {
+                    items(first: 100, after: $cursor) {
+                      nodes {
+                        id
+                        content {
+                          __typename
+                          ... on Issue { id }
+                          ... on PullRequest { id }
+                        }
+                      }
+                      pageInfo {
+                        hasNextPage
+                        endCursor
+                      }
+                    }
+                  }
+                }
+              }`;
+
+              let cursor = null;
+              while (true) {
+                const result = await github.graphql(query, { projectId: PROJECT_ID, cursor });
+                const items = result.node.items.nodes;
+                const match = items.find((entry) => entry.content?.id === contentId);
+
+                if (match) {
+                  return match.id;
+                }
+
+                if (!result.node.items.pageInfo.hasNextPage) {
+                  return null;
+                }
+
+                cursor = result.node.items.pageInfo.endCursor;
               }
-            }`;
+            }
 
-            const result = await github.graphql(query, { projectId: PROJECT_ID, statusFieldId: STATUS_FIELD_ID });
-            const options = result.node.field.options;
-            const targetOption = options.find(o => o.name === targetStatusName);
+            async function getOrCreateProjectItemId(contentId) {
+              const existingItemId = await findExistingProjectItemId(contentId);
+              if (existingItemId) {
+                return existingItemId;
+              }
 
-            if (!targetOption) {
-              console.log(`Target status "${targetStatusName}" not found in project columns.`);
+              const mutation = `mutation($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                  item { id }
+                }
+              }`;
+
+              const result = await github.graphql(mutation, { projectId: PROJECT_ID, contentId });
+              return result.addProjectV2ItemById.item.id;
+            }
+
+            const targetStatusName = resolveTargetStatus();
+            const targetOptionId = await getStatusOptionId(targetStatusName);
+
+            if (!targetOptionId) {
+              core.warning(`Target status "${targetStatusName}" was not found in the project field options.`);
               return;
             }
 
-            // 2. Add/Find item in project and update its status
-            const contentId = isIssue ? context.payload.issue.node_id : context.payload.pull_request.node_id;
-            
-            const addItemMutation = `mutation($projectId: ID!, $contentId: ID!) {
-              addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
-                item { id }
+            const contentId = item.node_id;
+            const itemId = await getOrCreateProjectItemId(contentId);
+
+            const mutation = `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+              updateProjectV2ItemFieldValue(input: {
+                projectId: $projectId,
+                itemId: $itemId,
+                fieldId: $fieldId,
+                value: { singleSelectOptionId: $optionId }
+              }) {
+                clientMutationId
               }
             }`;
-            const addItemResult = await github.graphql(addItemMutation, { projectId: PROJECT_ID, contentId: contentId });
-            const itemId = addItemResult.addProjectV2ItemById.item.id;
 
-            const updateMutation = `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
-              updateProjectV2ItemFieldValue(input: {
-                projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: { singleSelectOptionId: $optionId }
-              }) { clientMutationId }
-            }`;
-
-            await github.graphql(updateMutation, {
-              projectId: PROJECT_ID, itemId: itemId, fieldId: STATUS_FIELD_ID, optionId: targetOption.id
+            await github.graphql(mutation, {
+              projectId: PROJECT_ID,
+              itemId,
+              fieldId: STATUS_FIELD_ID,
+              optionId: targetOptionId
             });
-            console.log(`✅ Successfully moved #${item.number} to "${targetStatusName}"`);
+
+            console.log(`Moved #${item.number} to "${targetStatusName}"`);

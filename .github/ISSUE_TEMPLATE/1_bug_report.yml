@@ -63,5 +63,5 @@ body:
   - type: markdown
     attributes:
       value: |
-        > 📌 **DevOps Note / ملاحظة**: This bug will be automatically linked to its Phase. 
-        سيتم ربط هذا العطل تلقائياً بالمرحلة الخاصة به.
+        > 📌 **DevOps Note / ملاحظة**: The selected phase will be synchronized to the matching `phase-*` label by GitHub automation.
+        سيتم مزامنة المرحلة المختارة تلقائياً مع وسم `phase-*` المطابق عبر أتمتة GitHub.

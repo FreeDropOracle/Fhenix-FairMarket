@@ -1,0 +1,46 @@
+name: 🎯 Epic / Phase Tracker / تتبع المرحلة
+description: Master issue for tracking 6-phase execution & audit gates / النموذج الرئيسي لتتبع تنفيذ الـ 6 مراحل وبوابات التدقيق
+title: "[EPIC] Phase X: Title "
+labels: ["epic", "phase-tracker"]
+assignees: ["project-manager"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 🎯 Phase Objective / هدف المرحلة
+        Describe the main goal of this phase.
+        وصف الهدف الرئيسي لهذه المرحلة.
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase Number / رقم المرحلة
+      options: ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Phase 5", "Phase 6"]
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Specific Milestone Goals / الأهداف التفصيلية للمرحلة
+    validations:
+      required: true
+  - type: textarea
+    id: linked_issues
+    attributes:
+      label: 🔗 Linked Issues & PRs / المشاكل والطلبات المرتبطة
+      placeholder: "Add links like #123, #456 / أضف روابط المهام هنا"
+  - type: checkboxes
+    id: gate_status
+    attributes:
+      label: 🚦 Audit Gate Status / حالة بوابة التدقيق
+      options:
+        - label: P0 items completed / بنود P0 مكتملة
+        - label: Integration tests passed / اختبارات التكامل ناجحة
+        - label: Architecture review signed off / مراجعة المعمارية معتمدة
+        - label: Ready for next phase / جاهزة للانتقال للمرحلة التالية
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        > 🛡️ **Security Note / ملاحظة أمنية**: Each phase must pass its specific Audit Gate before closing this Epic.
+        يجب أن تجتاز كل مرحلة بوابة التدقيق الخاصة بها قبل إغلاق هذا التتبع.

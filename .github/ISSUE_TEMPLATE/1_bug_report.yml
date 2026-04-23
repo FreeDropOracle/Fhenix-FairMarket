@@ -1,0 +1,67 @@
+name: 🐞 Bug Report / تقرير عطل
+description: Report a reproducible defect in contracts, frontend, or keepers / الإبلاغ عن عطل في العقود، الواجهة، أو الحراس
+title: "[BUG] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### 🔍 Bug Description / وصف العطل
+        Please provide accurate details to speed up diagnosis.
+        يرجى تقديم تفاصيل دقيقة لتسريع التشخيص.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component / المكون المتأثر
+      options:
+        - contracts/core (FhenixFairMarket.sol)
+        - contracts/adapters (CofheAdapter.sol)
+        - contracts/settlement (SlashedPot.sol)
+        - frontend/ (Next.js + ERC-4337)
+        - keeper/ (Node.js + Docker)
+        - ci-cd / workflows
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Current Implementation Phase / مرحلة التنفيذ الحالية
+      options: ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Phase 5", "Phase 6"]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction Steps / خطوات إعادة الإنتاج
+      placeholder: |
+        1. Call `lockEscrow()` with 2 ETH / استدعاء الدالة بـ 2 إيثيريوم
+        2. Encrypt bid via `@cofhe/sdk` / تشفير المزايدة
+        3. Call `placeBid()` / إرسال المزايدة
+        4. Result: revert with `InsufficientFunds` / النتيجة: فشل العملية
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior / السلوك المتوقع
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment / البيئة (Network / Node / SDK Versions)
+      placeholder: e.g., Fhenix Testnet, Hardhat ^2.19, @cofhe/sdk 1.2.0
+  - type: checkboxes
+    id: impact
+    attributes:
+      label: Bug Impact / تأثير العطل
+      options:
+        - label: Affects funds flow (Lock/Leak) / يؤثر على تدفق الأموال (قفل أو تسريب)
+        - label: Breaks bid privacy (FHE/CoFHE) / يكسر خصوصية المزايدات
+        - label: Disables emergency mechanisms / يعطل آليات الطوارئ
+        - label: UI/UX issue only / مشكلة في واجهة المستخدم فقط
+  - type: markdown
+    attributes:
+      value: |
+        > 📌 **DevOps Note / ملاحظة**: This bug will be automatically linked to its Phase. 
+        سيتم ربط هذا العطل تلقائياً بالمرحلة الخاصة به.

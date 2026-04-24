@@ -1,24 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-contract MockCofhe {
-    function lte(bytes32 ciphertext, uint256 plaintext) external pure returns (bool) {
-        return uint256(ciphertext) <= plaintext;
+import "../adapters/CofheAdapter.sol";
+import "../utils/CofheCiphertextEncoding.sol";
+
+contract MockCofhe is CofheAdapter {
+    using CofheCiphertextEncoding for bytes32;
+
+    function expectPlaintext(bytes32 ciphertext, uint256 expectedPlaintext) external pure returns (bool) {
+        return ciphertext.decodeEuint32() == expectedPlaintext;
     }
 
-    function asEuint32(uint32 value) external pure returns (bytes32) {
-        return bytes32(uint256(value));
+    function expectBoolPlaintext(bytes32 ciphertext, bool expectedPlaintext) external pure returns (bool) {
+        return ciphertext.decodeEbool() == expectedPlaintext;
     }
 
-    function seal(bytes32 ciphertext, address viewer) external pure returns (bytes32) {
-        return keccak256(abi.encodePacked(ciphertext, viewer));
-    }
-
-    function getRawCiphertext(bytes32 ciphertext) external pure returns (bytes32) {
-        return ciphertext;
-    }
-
-    function expectPlaintext(bytes32 ciphertext, uint32 expectedPlaintext) external pure returns (bool) {
-        return uint256(ciphertext) == expectedPlaintext;
+    function explainCiphertext(bytes32 ciphertext) external pure returns (uint8 kind, uint256 payload) {
+        return (uint8(CofheCiphertextEncoding.kindOf(ciphertext)), CofheCiphertextEncoding.payloadOf(ciphertext));
     }
 }

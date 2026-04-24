@@ -327,13 +327,47 @@ describe("FhenixFairMarket Phase 1", function () {
     const { adapter, mockCofhe } = await loadFixture(deployFixture);
 
     const ciphertext = await adapter.asEuint32(42);
+    const encryptedTrue = await adapter.asEbool(true);
+    const encryptedFalse = await adapter.asEbool(false);
+    const selectedCiphertext = await adapter.select(encryptedTrue, ciphertext, await adapter.asEuint32(7));
+
     expect(await adapter.lte(ciphertext, 100)).to.equal(true);
+    expect(await adapter.gt(ciphertext, 40)).to.equal(true);
+    expect(await adapter.verifyEncryptedBidCoverage(ciphertext, 42)).to.equal(true);
+    expect(await adapter.verifyEncryptedBidCoverage(ciphertext, 41)).to.equal(false);
+    expect(await adapter.ciphertextKind(ciphertext)).to.equal(1);
+    expect(await adapter.ciphertextKind(encryptedTrue)).to.equal(2);
+    expect(await adapter.select(encryptedFalse, ciphertext, await adapter.asEuint32(7))).to.equal(
+      await adapter.asEuint32(7)
+    );
     expect(await adapter.seal(ciphertext, ethers.ZeroAddress)).to.not.equal(ethers.ZeroHash);
     expect(await adapter.getRawCiphertext(ciphertext)).to.equal(ciphertext);
     expect(await mockCofhe.asEuint32(42)).to.equal(ciphertext);
     expect(await mockCofhe.lte(ciphertext, 100)).to.equal(true);
+    expect(await mockCofhe.gt(ciphertext, 40)).to.equal(true);
     expect(await mockCofhe.seal(ciphertext, ethers.ZeroAddress)).to.not.equal(ethers.ZeroHash);
     expect(await mockCofhe.getRawCiphertext(ciphertext)).to.equal(ciphertext);
     expect(await mockCofhe.expectPlaintext(ciphertext, 42)).to.equal(true);
+    expect(await mockCofhe.expectBoolPlaintext(encryptedTrue, true)).to.equal(true);
+    expect(await mockCofhe.expectBoolPlaintext(encryptedFalse, false)).to.equal(true);
+    expect(await mockCofhe.expectPlaintext(selectedCiphertext, 42)).to.equal(true);
+
+    const explanation = await mockCofhe.explainCiphertext(ciphertext);
+    expect(explanation[0]).to.equal(1n);
+    expect(explanation[1]).to.equal(42n);
+  });
+
+  it("keeps ciphertext type tags explicit across the local adapter and mock path", async function () {
+    const { adapter, mockCofhe } = await loadFixture(deployFixture);
+
+    const encryptedBid = await adapter.asEuint32(17);
+    const encryptedCondition = await adapter.asEbool(true);
+
+    expect(await adapter.ciphertextKind(encryptedBid)).to.equal(1);
+    expect(await adapter.ciphertextKind(encryptedCondition)).to.equal(2);
+
+    const bidExplanation = await mockCofhe.explainCiphertext(encryptedBid);
+    expect(bidExplanation[0]).to.equal(1n);
+    expect(bidExplanation[1]).to.equal(17n);
   });
 });

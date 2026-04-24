@@ -8,6 +8,8 @@
   "scripts": {
     "compile": "pnpm --filter contracts compile",
     "test": "pnpm --filter contracts test",
+    "test:unit": "pnpm --filter contracts test:unit",
+    "test:integration": "pnpm --filter contracts test:integration",
     "coverage": "pnpm --filter contracts coverage"
   }
 }

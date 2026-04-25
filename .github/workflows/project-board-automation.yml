@@ -71,6 +71,15 @@ jobs:
               return BACKLOG_STATUS;
             }
 
+            function isProjectAccessDenied(error) {
+              const message = String(error?.message || "");
+              if (message.includes("Resource not accessible by integration")) {
+                return true;
+              }
+
+              return (error?.errors || []).some((entry) => entry?.type === "FORBIDDEN");
+            }
+
             async function getStatusField() {
               const query = `query($projectId: ID!) {
                 node(id: $projectId) {
@@ -158,37 +167,48 @@ jobs:
               return result.addProjectV2ItemById.item.id;
             }
 
-            const targetStatusName = resolveTargetStatus();
-            const statusField = await getStatusField();
+            try {
+              const targetStatusName = resolveTargetStatus();
+              const statusField = await getStatusField();
 
-            if (!statusField) {
-              core.warning(`Project field "${STATUS_FIELD_NAME}" (${STATUS_FIELD_ID}) was not found.`);
-              return;
-            }
-
-            const targetOption = statusField.options.find((entry) => entry.name === targetStatusName);
-            if (!targetOption) {
-              core.warning(`Target status "${targetStatusName}" was not found in the project field options.`);
-              return;
-            }
-
-            const itemId = await getOrCreateProjectItemId(item.node_id);
-            const mutation = `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
-              updateProjectV2ItemFieldValue(input: {
-                projectId: $projectId,
-                itemId: $itemId,
-                fieldId: $fieldId,
-                value: { singleSelectOptionId: $optionId }
-              }) {
-                clientMutationId
+              if (!statusField) {
+                core.warning(`Project field "${STATUS_FIELD_NAME}" (${STATUS_FIELD_ID}) was not found.`);
+                return;
               }
-            }`;
 
-            await github.graphql(mutation, {
-              projectId: PROJECT_ID,
-              itemId,
-              fieldId: statusField.id,
-              optionId: targetOption.id
-            });
+              const targetOption = statusField.options.find((entry) => entry.name === targetStatusName);
+              if (!targetOption) {
+                core.warning(`Target status "${targetStatusName}" was not found in the project field options.`);
+                return;
+              }
 
-            console.log(`Moved #${item.number} to "${targetStatusName}"`);
+              const itemId = await getOrCreateProjectItemId(item.node_id);
+              const mutation = `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId,
+                  itemId: $itemId,
+                  fieldId: $fieldId,
+                  value: { singleSelectOptionId: $optionId }
+                }) {
+                  clientMutationId
+                }
+              }`;
+
+              await github.graphql(mutation, {
+                projectId: PROJECT_ID,
+                itemId,
+                fieldId: statusField.id,
+                optionId: targetOption.id
+              });
+
+              console.log(`Moved #${item.number} to "${targetStatusName}"`);
+            } catch (error) {
+              if (isProjectAccessDenied(error)) {
+                core.warning(
+                  `Skipping project sync for #${item.number}: the workflow token cannot access ProjectV2 in this run context.`
+                );
+                return;
+              }
+
+              throw error;
+            }

@@ -75,6 +75,21 @@ describe("Phase 2 async resolution and settlement", function () {
     await expect(market.connect(bidder).claimAsset(1n)).to.be.revertedWithCustomError(market, "AssetAlreadyClaimed");
   });
 
+  it("rejects winner resolutions that try to settle at zero", async function () {
+    const { adapter, bidder, market, owner } = await loadFixture(createPhase2AuctionFixture);
+
+    await market.connect(bidder).lockEscrow(1n, { value: 600n });
+    const winnerBid = await adapter.asEuint32(450);
+    await market.connect(bidder).placeBid(1n, winnerBid);
+
+    await time.increase(24 * 60 * 60 + 1);
+    await market.triggerFinalize(1n);
+
+    await expect(
+      market.connect(owner)["submitResolution(uint256,address,bytes32,uint256)"](1n, bidder.address, winnerBid, 0n)
+    ).to.be.revertedWithCustomError(market, "ZeroWinningAmount");
+  });
+
   it("routes seller slashing into the compensation pot and distributes refunds without loops on cancellation", async function () {
     const { adapter, bidder, bidderTwo, market, seller, slashedPot } = await loadFixture(createPhase2AuctionFixture);
 

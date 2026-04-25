@@ -71,6 +71,8 @@ contract FhenixFairMarket is
     error SlashedPotNotConfigured();
     error UnexpectedAuctionState(AuctionState expected, AuctionState actual);
     error UnauthorizedAssetClaim(uint256 auctionId, address caller, address expectedRecipient);
+    error WinnerRequiredForWinningAmount(uint256 auctionId, uint256 winningAmount);
+    error ZeroWinningAmount(uint256 auctionId, address winner);
     error ZeroAddress();
     error ZeroValue();
 
@@ -554,7 +556,14 @@ contract FhenixFairMarket is
 
     function _submitResolution(uint256 auctionId, address winner, bytes32 winnerCiphertext, uint256 winningAmount) internal {
         Auction storage auction = _auctions[auctionId];
-        if (winner != address(0)) {
+        if (winner == address(0)) {
+            if (winningAmount != 0) {
+                revert WinnerRequiredForWinningAmount(auctionId, winningAmount);
+            }
+        } else {
+            if (winningAmount == 0) {
+                revert ZeroWinningAmount(auctionId, winner);
+            }
             if (_encryptedBids[auctionId][winner] == bytes32(0)) {
                 revert MissingEncryptedBid(auctionId, winner);
             }

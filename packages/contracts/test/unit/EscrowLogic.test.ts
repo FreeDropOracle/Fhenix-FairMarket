@@ -186,21 +186,31 @@ describe("FhenixFairMarket Phase 1", function () {
     await expect(market.triggerFinalize(1n)).to.be.revertedWithCustomError(market, "AuctionStillRunning");
   });
 
-  it("records a minimal resolution from the owner once resolving", async function () {
+  it("allows a no-winner resolution only when the winning amount is zero", async function () {
     const { market, owner } = await loadFixture(createAuctionFixture);
 
     await time.increase(24 * 60 * 60 + 1);
     await market.triggerFinalize(1n);
 
-    const cipher = ethers.encodeBytes32String("winner");
-    await expect(market.connect(owner)["submitResolution(uint256,bytes32,uint256)"](1n, cipher, 77n))
+    await expect(market.connect(owner)["submitResolution(uint256,bytes32,uint256)"](1n, ethers.ZeroHash, 0n))
       .to.emit(market, "ResolutionRecorded")
-      .withArgs(1n, ethers.ZeroAddress, cipher);
+      .withArgs(1n, ethers.ZeroAddress, ethers.ZeroHash);
 
     const auction = await market.getAuction(1n);
     expect(auction[5]).to.equal(3n);
-    expect(auction[8]).to.equal(cipher);
-    expect(auction[9]).to.equal(77n);
+    expect(auction[8]).to.equal(ethers.ZeroHash);
+    expect(auction[9]).to.equal(0n);
+  });
+
+  it("rejects no-winner resolutions that try to assign a non-zero winning amount", async function () {
+    const { market, owner } = await loadFixture(createAuctionFixture);
+
+    await time.increase(24 * 60 * 60 + 1);
+    await market.triggerFinalize(1n);
+
+    await expect(
+      market.connect(owner)["submitResolution(uint256,bytes32,uint256)"](1n, ethers.encodeBytes32String("winner"), 77n)
+    ).to.be.revertedWithCustomError(market, "WinnerRequiredForWinningAmount");
   });
 
   it("rejects resolution calls when the auction is not resolving", async function () {

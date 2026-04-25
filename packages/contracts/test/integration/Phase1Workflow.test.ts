@@ -23,6 +23,7 @@ describe("Phase 1 integration workflow", function () {
 
     const encryptedWinningBid = await adapter.asEuint32(450);
     expect(await adapter.verifyEncryptedBidCoverage(encryptedWinningBid, 600n)).to.equal(true);
+    await market.connect(bidder).placeBid(1n, encryptedWinningBid);
 
     const encryptedWinner = await adapter.select(
       await adapter.asEbool(true),
@@ -33,7 +34,12 @@ describe("Phase 1 integration workflow", function () {
 
     await time.increase(24 * 60 * 60 + 1);
     await market.triggerFinalize(1n);
-    await market.connect(owner)["submitResolution(uint256,bytes32,uint256)"](1n, encryptedWinner, 450n);
+    await market.connect(owner)["submitResolution(uint256,address,bytes32,uint256)"](
+      1n,
+      bidder.address,
+      encryptedWinner,
+      450n
+    );
 
     const auction = await market.getAuction(1n);
     expect(auction[5]).to.equal(3n);

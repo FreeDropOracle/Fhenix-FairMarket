@@ -107,11 +107,16 @@ contract SettlementEngine is Ownable, ISettlementEngine {
     }
 
     function prepareResolutionRequest(
+        address market,
         uint256 auctionId,
         uint32 bidCount,
         uint64 endTime
     ) external view override returns (ResolutionRequest memory) {
-        bytes32 requestId = keccak256(abi.encode(address(this), block.chainid, auctionId, bidCount, endTime));
+        if (market == address(0)) {
+            revert ZeroAddress();
+        }
+
+        bytes32 requestId = keccak256(abi.encode(address(this), block.chainid, market, auctionId, bidCount, endTime));
         return
             ResolutionRequest({
                 requestId: requestId,
@@ -121,6 +126,7 @@ contract SettlementEngine is Ownable, ISettlementEngine {
     }
 
     function verifyResolutionProof(
+        address market,
         uint256 auctionId,
         bytes32 requestId,
         address winner,
@@ -128,10 +134,10 @@ contract SettlementEngine is Ownable, ISettlementEngine {
         uint256 winningAmount,
         bytes calldata avsProof
     ) external override returns (bool) {
-        if (address(avs) == address(0)) {
+        if (market == address(0) || address(avs) == address(0)) {
             revert ZeroAddress();
         }
 
-        return avs.verifyAttestation(auctionId, requestId, winner, winnerCiphertext, winningAmount, avsProof);
+        return avs.verifyAttestation(market, auctionId, requestId, winner, winnerCiphertext, winningAmount, avsProof);
     }
 }

@@ -28,11 +28,13 @@ export async function collectEncryptedBids(
 
 export async function buildPhase3ResolutionProof(
   market: {
+    getAddress(): Promise<string>;
     getResolutionRequest(auctionId: bigint): Promise<readonly [string, string, string, bigint]>;
     getAuction(auctionId: bigint): Promise<readonly unknown[]>;
   },
   avs: {
     computeDigest(
+      market: string,
       auctionId: bigint,
       requestId: string,
       winner: string,
@@ -64,6 +66,7 @@ export async function buildPhase3ResolutionProof(
   };
 
   const digest = await avs.computeDigest(
+    await market.getAddress(),
     payload.auctionId,
     payload.requestId,
     payload.winner,

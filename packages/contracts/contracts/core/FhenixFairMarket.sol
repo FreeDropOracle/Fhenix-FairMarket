@@ -98,9 +98,6 @@ contract FhenixFairMarket is
     mapping(uint256 => mapping(address => uint256)) public escrowBalances;
     mapping(uint256 => mapping(address => bool)) public hasWithdrawn;
     mapping(uint256 => mapping(address => bytes32)) private _encryptedBids;
-    mapping(uint256 => mapping(address => bool)) private _knownBidders;
-    mapping(uint256 => address[]) private _bidders;
-    mapping(uint256 => PendingResolutionRequest) private _resolutionRequests;
 
     uint256 public auctionCounter;
     uint256 private _reentrancyStatus;
@@ -109,6 +106,10 @@ contract FhenixFairMarket is
     ISettlementEngine public settlementEngine;
     uint64 public lastObservationTimestamp;
     uint64 public movingAverageBlockDelta;
+    // New Phase 3 storage must stay append-only to preserve the Phase 2 proxy layout.
+    mapping(uint256 => mapping(address => bool)) private _knownBidders;
+    mapping(uint256 => address[]) private _bidders;
+    mapping(uint256 => PendingResolutionRequest) private _resolutionRequests;
 
     event AuctionCreated(
         uint256 indexed auctionId,
@@ -657,6 +658,7 @@ contract FhenixFairMarket is
 
         if (
             !settlementEngine.verifyResolutionProof(
+                address(this),
                 auctionId,
                 request.requestId,
                 winner,
@@ -697,7 +699,7 @@ contract FhenixFairMarket is
                 });
         }
 
-        return settlementEngine.prepareResolutionRequest(auctionId, auction.bidCount, auction.endTime);
+        return settlementEngine.prepareResolutionRequest(address(this), auctionId, auction.bidCount, auction.endTime);
     }
 
     function _observeNetwork() internal {

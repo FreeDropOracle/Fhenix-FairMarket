@@ -37,7 +37,7 @@ describe("Phase 2 settlement components", function () {
   }
 
   it("covers the timeout, slash, payout, and pro-rata math branches in SettlementEngine", async function () {
-    const { avs, settlementEngine } = await loadFixture(deployFixture);
+    const { avs, recipient, settlementEngine } = await loadFixture(deployFixture);
 
     expect(await settlementEngine.computeDynamicTimeout(0n)).to.equal(15n * 60n);
     expect(await settlementEngine.computeDynamicTimeout(1n)).to.equal(15n * 60n);
@@ -62,7 +62,7 @@ describe("Phase 2 settlement components", function () {
     expect(await settlementEngine.computeProRataShare(10n, 100n, 0n)).to.equal(0n);
     expect(await settlementEngine.computeProRataShare(25n, 100n, 80n)).to.equal(20n);
 
-    const request = await settlementEngine.prepareResolutionRequest(1n, 2, 100n);
+    const request = await settlementEngine.prepareResolutionRequest(recipient.address, 1n, 2, 100n);
     expect(request.requestId).to.not.equal(ethers.ZeroHash);
     expect(request.winnerHandle).to.not.equal(ethers.ZeroHash);
     expect(request.amountHandle).to.not.equal(ethers.ZeroHash);
@@ -83,7 +83,7 @@ describe("Phase 2 settlement components", function () {
       "ZeroAddress"
     );
     await expect(
-      settlementEngine.verifyResolutionProof(1n, ethers.ZeroHash, ethers.ZeroAddress, ethers.ZeroHash, 0n, "0x")
+      settlementEngine.verifyResolutionProof(ethers.ZeroAddress, 1n, ethers.ZeroHash, ethers.ZeroAddress, ethers.ZeroHash, 0n, "0x")
     ).to.be.revertedWithCustomError(settlementEngine, "ZeroAddress");
 
     const avsFactory = await ethers.getContractFactory("MockEigenLayerAVS");
@@ -100,7 +100,7 @@ describe("Phase 2 settlement components", function () {
   it("slashes duplicate operators only once when an attestation envelope is malformed", async function () {
     const { avs, operatorOne, recipient } = await loadFixture(deployFixture);
 
-    const digest = await avs.computeDigest(1n, ethers.id("request"), recipient.address, ethers.ZeroHash, 1n);
+    const digest = await avs.computeDigest(recipient.address, 1n, ethers.id("request"), recipient.address, ethers.ZeroHash, 1n);
     const signature = await operatorOne.signMessage(ethers.getBytes(digest));
     const malformedProof = ethers.AbiCoder.defaultAbiCoder().encode(
       [
@@ -110,11 +110,36 @@ describe("Phase 2 settlement components", function () {
     );
 
     expect(
-      await avs.verifyAttestation.staticCall(1n, ethers.id("request"), recipient.address, ethers.ZeroHash, 1n, malformedProof)
+      await avs.verifyAttestation.staticCall(
+        recipient.address,
+        1n,
+        ethers.id("request"),
+        recipient.address,
+        ethers.ZeroHash,
+        1n,
+        malformedProof
+      )
     ).to.equal(false);
 
-    await avs.verifyAttestation(1n, ethers.id("request"), recipient.address, ethers.ZeroHash, 1n, malformedProof);
+    await avs.verifyAttestation(recipient.address, 1n, ethers.id("request"), recipient.address, ethers.ZeroHash, 1n, malformedProof);
     expect(await avs.slashCount(operatorOne.address)).to.equal(1n);
+  });
+
+  it("domain-separates request ids and AVS digests by market address", async function () {
+    const { avs, operatorOne, recipient, settlementEngine } = await loadFixture(deployFixture);
+
+    const marketOne = recipient.address;
+    const marketTwo = operatorOne.address;
+    const requestOne = await settlementEngine.prepareResolutionRequest(marketOne, 7n, 2, 100n);
+    const requestTwo = await settlementEngine.prepareResolutionRequest(marketTwo, 7n, 2, 100n);
+
+    expect(requestOne.requestId).to.not.equal(requestTwo.requestId);
+    expect(requestOne.winnerHandle).to.not.equal(requestTwo.winnerHandle);
+    expect(requestOne.amountHandle).to.not.equal(requestTwo.amountHandle);
+
+    const digestOne = await avs.computeDigest(marketOne, 7n, requestOne.requestId, recipient.address, ethers.ZeroHash, 1n);
+    const digestTwo = await avs.computeDigest(marketTwo, 7n, requestOne.requestId, recipient.address, ethers.ZeroHash, 1n);
+    expect(digestOne).to.not.equal(digestTwo);
   });
 
   it("guards SlashedPot setup, access control, and successful pull-based compensation claims", async function () {

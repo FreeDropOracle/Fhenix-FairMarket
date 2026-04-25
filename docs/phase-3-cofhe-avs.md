@@ -21,6 +21,7 @@ The market contract now exposes:
 - `getBidders(uint256 auctionId)`
 
 Bidder addresses are tracked the first time an encrypted bid is submitted so the keeper layer can replay the encrypted orderbook without storing plaintext values on-chain.
+The new Phase 3 storage is appended after the legacy Phase 2 slots so the UUPS proxy layout remains upgrade-safe.
 
 ### Settlement engine expansion
 
@@ -29,6 +30,7 @@ Bidder addresses are tracked the first time an encrypted bid is submitted so the
 - derives deterministic request metadata via `prepareResolutionRequest(...)`
 - delegates AVS proof verification via `verifyResolutionProof(...)`
 - stores the active AVS verifier address with owner-controlled rotation
+- binds request ids and AVS verification digests to the market address so proofs cannot be replayed across sibling markets that share the same engine or AVS
 
 ### Mock EigenLayer AVS
 

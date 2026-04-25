@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 interface IEigenLayerAVS {
     function computeDigest(
+        address market,
         uint256 auctionId,
         bytes32 requestId,
         address winner,
@@ -11,6 +12,7 @@ interface IEigenLayerAVS {
     ) external view returns (bytes32);
 
     function verifyAttestation(
+        address market,
         uint256 auctionId,
         bytes32 requestId,
         address winner,

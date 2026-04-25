@@ -92,18 +92,24 @@ contract MockEigenLayerAVS is Ownable, IEigenLayerAVS {
     }
 
     function computeDigest(
+        address market,
         uint256 auctionId,
         bytes32 requestId,
         address winner,
         bytes32 winnerCiphertext,
         uint256 winningAmount
     ) public view override returns (bytes32) {
+        if (market == address(0)) {
+            revert ZeroAddress();
+        }
+
         return keccak256(
-            abi.encode(address(this), block.chainid, auctionId, requestId, winner, winnerCiphertext, winningAmount)
+            abi.encode(address(this), block.chainid, market, auctionId, requestId, winner, winnerCiphertext, winningAmount)
         );
     }
 
     function verifyAttestation(
+        address market,
         uint256 auctionId,
         bytes32 requestId,
         address winner,
@@ -131,7 +137,8 @@ contract MockEigenLayerAVS is Ownable, IEigenLayerAVS {
             return false;
         }
 
-        bytes32 digest = computeDigest(auctionId, requestId, winner, winnerCiphertext, winningAmount).toEthSignedMessageHash();
+        bytes32 digest = computeDigest(market, auctionId, requestId, winner, winnerCiphertext, winningAmount)
+            .toEthSignedMessageHash();
         uint256 validSignatures = 0;
 
         for (uint256 index = 0; index < envelope.operators.length; ++index) {

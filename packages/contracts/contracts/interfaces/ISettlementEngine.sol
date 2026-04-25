@@ -30,12 +30,14 @@ interface ISettlementEngine {
     ) external pure returns (uint256);
 
     function prepareResolutionRequest(
+        address market,
         uint256 auctionId,
         uint32 bidCount,
         uint64 endTime
     ) external view returns (ResolutionRequest memory);
 
     function verifyResolutionProof(
+        address market,
         uint256 auctionId,
         bytes32 requestId,
         address winner,

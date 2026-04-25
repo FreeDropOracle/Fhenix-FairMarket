@@ -36,6 +36,14 @@ async function main() {
 
   const [defaultSigner] = await ethers.getSigners();
   const initialOwner = process.env.PHASE1_INITIAL_OWNER || defaultSigner.address;
+  let avsAddress = process.env.PHASE3_AVS || existing.avs;
+  if (avsAddress) {
+    const deployedCode = await ethers.provider.getCode(avsAddress);
+    if (deployedCode === "0x") {
+      avsAddress = undefined;
+    }
+  }
+
   let settlementEngineAddress = process.env.PHASE2_SETTLEMENT_ENGINE || existing.settlementEngine;
   if (settlementEngineAddress) {
     const deployedCode = await ethers.provider.getCode(settlementEngineAddress);
@@ -46,9 +54,16 @@ async function main() {
 
   if (!settlementEngineAddress) {
     const settlementEngineFactory = await ethers.getContractFactory("SettlementEngine");
-    const settlementEngine = await settlementEngineFactory.deploy();
+    const settlementEngine = await settlementEngineFactory.deploy(initialOwner);
     await settlementEngine.waitForDeployment();
     settlementEngineAddress = await settlementEngine.getAddress();
+  }
+
+  if (!avsAddress) {
+    const avsFactory = await ethers.getContractFactory("MockEigenLayerAVS");
+    const avs = await avsFactory.deploy(initialOwner, [defaultSigner.address], 1);
+    await avs.waitForDeployment();
+    avsAddress = await avs.getAddress();
   }
 
   let slashedPot = process.env.PHASE1_SLASHED_POT || existing.slashedPot;
@@ -92,9 +107,16 @@ async function main() {
     await (await market.connect(defaultSigner).setSettlementEngine(settlementEngineAddress)).wait();
   }
 
+  const settlementEngineFactory = await ethers.getContractFactory("SettlementEngine");
+  const settlementEngine = settlementEngineFactory.attach(settlementEngineAddress);
+  if ((await settlementEngine.avs()) != avsAddress) {
+    await (await settlementEngine.connect(defaultSigner).setAVS(avsAddress)).wait();
+  }
+
   const nextPayload = {
     ...existing,
     adapter: adapterAddress,
+    avs: avsAddress,
     settlementEngine: settlementEngineAddress,
     implementation: await implementation.getAddress(),
     proxy: await proxy.getAddress(),
@@ -108,6 +130,7 @@ async function main() {
   console.log(`Proxy deployed to ${nextPayload.proxy}`);
   console.log(`SlashedPot deployed to ${nextPayload.slashedPot}`);
   console.log(`SettlementEngine configured at ${nextPayload.settlementEngine}`);
+  console.log(`Mock AVS configured at ${nextPayload.avs}`);
 }
 
 main().catch((error) => {

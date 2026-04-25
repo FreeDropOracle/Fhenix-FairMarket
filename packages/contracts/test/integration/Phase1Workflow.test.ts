@@ -2,6 +2,7 @@ import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 
 import { deployPhase2Fixture } from "../helpers/fixtures";
+import { buildPhase3ResolutionProof, collectEncryptedBids } from "../helpers/phase3";
 
 describe("Phase 1 integration workflow", function () {
   async function deployFixture() {
@@ -9,7 +10,8 @@ describe("Phase 1 integration workflow", function () {
   }
 
   it("executes the Phase 1 scaffold from escrow to encrypted resolution", async function () {
-    const { owner, seller, bidder, adapter, market, nft, mockCofhe } = await loadFixture(deployFixture);
+    const { avs, avsOperatorOne, avsOperatorTwo, owner, seller, bidder, adapter, market, nft, mockCofhe } =
+      await loadFixture(deployFixture);
 
     await nft.connect(seller).mint(seller.address);
     await nft.connect(seller).approve(await market.getAddress(), 1n);
@@ -34,11 +36,14 @@ describe("Phase 1 integration workflow", function () {
 
     await time.increase(24 * 60 * 60 + 1);
     await market.triggerFinalize(1n);
-    await market.connect(owner)["submitResolution(uint256,address,bytes32,uint256)"](
+    const encryptedBids = await collectEncryptedBids(market, 1n);
+    const { proof } = await buildPhase3ResolutionProof(market, avs, 1n, encryptedBids, [avsOperatorOne, avsOperatorTwo]);
+    await market.connect(owner)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
       1n,
       bidder.address,
       encryptedWinner,
-      450n
+      450n,
+      proof
     );
 
     const auction = await market.getAuction(1n);

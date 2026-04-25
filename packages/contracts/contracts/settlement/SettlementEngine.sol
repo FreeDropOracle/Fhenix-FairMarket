@@ -1,14 +1,35 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+import "../interfaces/IEigenLayerAVS.sol";
 import "../interfaces/ISettlementEngine.sol";
 
-contract SettlementEngine is ISettlementEngine {
+contract SettlementEngine is Ownable, ISettlementEngine {
     uint256 public constant BPS_DENOMINATOR = 10_000;
     uint256 public constant MIN_DYNAMIC_TIMEOUT = 15 minutes;
     uint256 public constant MAX_DYNAMIC_TIMEOUT = 2 hours;
     uint256 public constant DYNAMIC_TIMEOUT_MULTIPLIER = 90;
     uint256 public constant MIN_CANCELLATION_SLASH_BPS = 2_500;
+
+    error ZeroAddress();
+
+    IEigenLayerAVS public avs;
+
+    event AVSUpdated(address indexed previousAVS, address indexed newAVS);
+
+    constructor(address initialOwner) Ownable(initialOwner) {}
+
+    function setAVS(IEigenLayerAVS newAVS) external onlyOwner {
+        if (address(newAVS) == address(0)) {
+            revert ZeroAddress();
+        }
+
+        address previousAVS = address(avs);
+        avs = newAVS;
+        emit AVSUpdated(previousAVS, address(newAVS));
+    }
 
     function computeDynamicTimeout(uint256 movingAverageBlockDelta) external pure override returns (uint256) {
         uint256 timeoutWindow = movingAverageBlockDelta == 0
@@ -83,5 +104,40 @@ contract SettlementEngine is ISettlementEngine {
         }
 
         return (contribution * totalPot) / totalEscrow;
+    }
+
+    function prepareResolutionRequest(
+        address market,
+        uint256 auctionId,
+        uint32 bidCount,
+        uint64 endTime
+    ) external view override returns (ResolutionRequest memory) {
+        if (market == address(0)) {
+            revert ZeroAddress();
+        }
+
+        bytes32 requestId = keccak256(abi.encode(address(this), block.chainid, market, auctionId, bidCount, endTime));
+        return
+            ResolutionRequest({
+                requestId: requestId,
+                winnerHandle: keccak256(abi.encode(requestId, "winner")),
+                amountHandle: keccak256(abi.encode(requestId, "amount"))
+            });
+    }
+
+    function verifyResolutionProof(
+        address market,
+        uint256 auctionId,
+        bytes32 requestId,
+        address winner,
+        bytes32 winnerCiphertext,
+        uint256 winningAmount,
+        bytes calldata avsProof
+    ) external override returns (bool) {
+        if (market == address(0) || address(avs) == address(0)) {
+            revert ZeroAddress();
+        }
+
+        return avs.verifyAttestation(market, auctionId, requestId, winner, winnerCiphertext, winningAmount, avsProof);
     }
 }

@@ -1,0 +1,77 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  auctionMonitor:
+    build:
+      context: ../..
+      dockerfile: packages/keeper/Dockerfile
+    env_file:
+      - .env.example
+    environment:
+      KEEPER_ROLE: auction-monitor
+      KEEPER_REDIS_URL: redis://redis:6379
+      KEEPER_METRICS_PORT: 9400
+    depends_on:
+      - redis
+    ports:
+      - "9401:9400"
+    volumes:
+      - ./state:/app/packages/keeper/state
+
+  cofheDispatcher:
+    build:
+      context: ../..
+      dockerfile: packages/keeper/Dockerfile
+    env_file:
+      - .env.example
+    environment:
+      KEEPER_ROLE: cofhe-dispatcher
+      KEEPER_REDIS_URL: redis://redis:6379
+      KEEPER_METRICS_PORT: 9400
+    depends_on:
+      - redis
+    ports:
+      - "9402:9400"
+    volumes:
+      - ./state:/app/packages/keeper/state
+
+  avsSubmitter:
+    build:
+      context: ../..
+      dockerfile: packages/keeper/Dockerfile
+    env_file:
+      - .env.example
+    environment:
+      KEEPER_ROLE: avs-submitter
+      KEEPER_REDIS_URL: redis://redis:6379
+      KEEPER_METRICS_PORT: 9400
+    depends_on:
+      - redis
+    ports:
+      - "9403:9400"
+    volumes:
+      - ./state:/app/packages/keeper/state
+
+  prometheus:
+    image: prom/prometheus:v2.53.1
+    profiles: ["observability"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - auctionMonitor
+      - cofheDispatcher
+      - avsSubmitter
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    profiles: ["observability"]
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus

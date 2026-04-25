@@ -12,3 +12,5 @@ packages/*/artifacts/
 packages/*/cache/
 packages/*/typechain-types/
 packages/*/deployments/
+packages/*/dist/
+packages/keeper/state/*.json

@@ -10,6 +10,8 @@
     "test": "pnpm --filter contracts test",
     "test:unit": "pnpm --filter contracts test:unit",
     "test:integration": "pnpm --filter contracts test:integration",
-    "coverage": "pnpm --filter contracts coverage"
+    "coverage": "pnpm --filter contracts coverage",
+    "build:keeper": "pnpm --filter keeper build",
+    "test:keeper": "pnpm --filter keeper test"
   }
 }

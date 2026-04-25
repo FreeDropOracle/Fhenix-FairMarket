@@ -62,7 +62,7 @@ describe("Phase 2 settlement components", function () {
     expect(await settlementEngine.computeProRataShare(10n, 100n, 0n)).to.equal(0n);
     expect(await settlementEngine.computeProRataShare(25n, 100n, 80n)).to.equal(20n);
 
-    const request = await settlementEngine.prepareResolutionRequest(recipient.address, 1n, 2, 100n);
+    const request = await settlementEngine.prepareResolutionRequest(recipient.address, 1n, 2, 100n, 1n, ethers.id("salt-1"));
     expect(request.requestId).to.not.equal(ethers.ZeroHash);
     expect(request.winnerHandle).to.not.equal(ethers.ZeroHash);
     expect(request.amountHandle).to.not.equal(ethers.ZeroHash);
@@ -130,8 +130,8 @@ describe("Phase 2 settlement components", function () {
 
     const marketOne = recipient.address;
     const marketTwo = operatorOne.address;
-    const requestOne = await settlementEngine.prepareResolutionRequest(marketOne, 7n, 2, 100n);
-    const requestTwo = await settlementEngine.prepareResolutionRequest(marketTwo, 7n, 2, 100n);
+    const requestOne = await settlementEngine.prepareResolutionRequest(marketOne, 7n, 2, 100n, 1n, ethers.id("salt-1"));
+    const requestTwo = await settlementEngine.prepareResolutionRequest(marketTwo, 7n, 2, 100n, 1n, ethers.id("salt-1"));
 
     expect(requestOne.requestId).to.not.equal(requestTwo.requestId);
     expect(requestOne.winnerHandle).to.not.equal(requestTwo.winnerHandle);
@@ -140,6 +140,17 @@ describe("Phase 2 settlement components", function () {
     const digestOne = await avs.computeDigest(marketOne, 7n, requestOne.requestId, recipient.address, ethers.ZeroHash, 1n);
     const digestTwo = await avs.computeDigest(marketTwo, 7n, requestOne.requestId, recipient.address, ethers.ZeroHash, 1n);
     expect(digestOne).to.not.equal(digestTwo);
+  });
+
+  it("changes request ids when the keeper nonce or race salt changes", async function () {
+    const { recipient, settlementEngine } = await loadFixture(deployFixture);
+
+    const requestOne = await settlementEngine.prepareResolutionRequest(recipient.address, 9n, 3, 250n, 1n, ethers.id("salt-a"));
+    const requestTwo = await settlementEngine.prepareResolutionRequest(recipient.address, 9n, 3, 250n, 2n, ethers.id("salt-a"));
+    const requestThree = await settlementEngine.prepareResolutionRequest(recipient.address, 9n, 3, 250n, 2n, ethers.id("salt-b"));
+
+    expect(requestOne.requestId).to.not.equal(requestTwo.requestId);
+    expect(requestTwo.requestId).to.not.equal(requestThree.requestId);
   });
 
   it("guards SlashedPot setup, access control, and successful pull-based compensation claims", async function () {

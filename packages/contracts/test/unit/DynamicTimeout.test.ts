@@ -39,12 +39,13 @@ describe("Phase 2 dynamic timeout and fallback logic", function () {
       .withArgs(1n, anyValue, timeoutWindow);
 
     const phase2Details = await market.getAuctionPhase2Details(1n);
-    expect(phase2Details[2]).to.equal(ethers.parseEther("1"));
+    const finalizeReward = (ethers.parseEther("1") * 20n) / 10_000n;
+    expect(phase2Details[2]).to.equal(ethers.parseEther("1") - finalizeReward);
     expect(await nft.ownerOf(1n)).to.equal(seller.address);
 
     const refundPreview = await market.previewRefund(1n, bidder.address);
     expect(refundPreview[0]).to.equal(603n);
-    expect(refundPreview[1]).to.equal(ethers.parseEther("1"));
+    expect(refundPreview[1]).to.equal(ethers.parseEther("1") - finalizeReward);
 
     await market.connect(bidder).claimRefund(1n);
     expect(await market.previewSellerPayout(1n)).to.equal(0n);

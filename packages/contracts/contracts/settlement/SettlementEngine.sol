@@ -110,13 +110,17 @@ contract SettlementEngine is Ownable, ISettlementEngine {
         address market,
         uint256 auctionId,
         uint32 bidCount,
-        uint64 endTime
+        uint64 endTime,
+        uint256 finalizeNonce,
+        bytes32 raceSalt
     ) external view override returns (ResolutionRequest memory) {
         if (market == address(0)) {
             revert ZeroAddress();
         }
 
-        bytes32 requestId = keccak256(abi.encode(address(this), block.chainid, market, auctionId, bidCount, endTime));
+        bytes32 requestId = keccak256(
+            abi.encode(address(this), block.chainid, market, auctionId, bidCount, endTime, finalizeNonce, raceSalt)
+        );
         return
             ResolutionRequest({
                 requestId: requestId,

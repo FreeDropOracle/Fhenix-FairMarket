@@ -33,7 +33,9 @@ interface ISettlementEngine {
         address market,
         uint256 auctionId,
         uint32 bidCount,
-        uint64 endTime
+        uint64 endTime,
+        uint256 finalizeNonce,
+        bytes32 raceSalt
     ) external view returns (ResolutionRequest memory);
 
     function verifyResolutionProof(

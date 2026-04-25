@@ -3,73 +3,22 @@ import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
+import { createPhase2AuctionFixture, deployPhase2Fixture } from "../helpers/fixtures";
+
 describe("FhenixFairMarket Phase 1", function () {
   async function deployFixture() {
-    const [owner, seller, bidder, outsider] = await ethers.getSigners();
-
-    const adapterFactory = await ethers.getContractFactory("CofheAdapter");
-    const adapter = await adapterFactory.deploy();
-    await adapter.waitForDeployment();
-
-    const implementationFactory = await ethers.getContractFactory("FhenixFairMarket");
-    const implementation = await implementationFactory.deploy();
-    await implementation.waitForDeployment();
-
-    const proxyFactory = await ethers.getContractFactory("FhenixFairMarketProxy");
-    const initData = implementationFactory.interface.encodeFunctionData("initialize", [
-      await adapter.getAddress(),
-      owner.address,
-      ethers.ZeroAddress
-    ]);
-
-    const proxy = await proxyFactory.deploy(await implementation.getAddress(), initData);
-    await proxy.waitForDeployment();
-
-    const market = implementationFactory.attach(await proxy.getAddress());
-
-    const nftFactory = await ethers.getContractFactory("MockERC721");
-    const nft = await nftFactory.deploy();
-    await nft.waitForDeployment();
-
-    const mockCofheFactory = await ethers.getContractFactory("MockCofhe");
-    const mockCofhe = await mockCofheFactory.deploy();
-    await mockCofhe.waitForDeployment();
-
-    return {
-      owner,
-      seller,
-      bidder,
-      outsider,
-      adapter,
-      implementation,
-      proxy,
-      market,
-      nft,
-      mockCofhe
-    };
+    return deployPhase2Fixture();
   }
 
   async function createAuctionFixture() {
-    const context = await deployFixture();
-    const { market, nft, seller } = context;
-
-    await nft.connect(seller).mint(seller.address);
-    await nft.connect(seller).approve(await market.getAddress(), 1n);
-
-    await market
-      .connect(seller)
-      .createAuction(await nft.getAddress(), 1n, 24 * 60 * 60, ethers.parseEther("1"), true, {
-        value: ethers.parseEther("1")
-      });
-
-    return context;
+    return createPhase2AuctionFixture();
   }
 
   it("initializes once through the proxy", async function () {
     const { market, adapter, owner } = await loadFixture(deployFixture);
 
     await expect(market.initialize(await adapter.getAddress(), owner.address, ethers.ZeroAddress)).to.be.reverted;
-    expect(await market.contractVersion()).to.equal("phase1");
+    expect(await market.contractVersion()).to.equal("phase2");
   });
 
   it("rejects invalid initialization parameters on a fresh implementation", async function () {
@@ -244,9 +193,9 @@ describe("FhenixFairMarket Phase 1", function () {
     await market.triggerFinalize(1n);
 
     const cipher = ethers.encodeBytes32String("winner");
-    await expect(market.connect(owner).submitResolution(1n, cipher, 77n))
+    await expect(market.connect(owner)["submitResolution(uint256,bytes32,uint256)"](1n, cipher, 77n))
       .to.emit(market, "ResolutionRecorded")
-      .withArgs(1n, cipher, 77n);
+      .withArgs(1n, ethers.ZeroAddress, cipher);
 
     const auction = await market.getAuction(1n);
     expect(auction[5]).to.equal(3n);
@@ -258,7 +207,7 @@ describe("FhenixFairMarket Phase 1", function () {
     const { market, owner } = await loadFixture(createAuctionFixture);
 
     await expect(
-      market.connect(owner).submitResolution(1n, ethers.encodeBytes32String("winner"), 10n)
+      market.connect(owner)["submitResolution(uint256,bytes32,uint256)"](1n, ethers.encodeBytes32String("winner"), 10n)
     ).to.be.revertedWithCustomError(market, "UnexpectedAuctionState");
   });
 
@@ -287,11 +236,12 @@ describe("FhenixFairMarket Phase 1", function () {
     );
   });
 
-  it("allows the owner to void a stuck resolving auction", async function () {
+  it("allows fallback void once the resolving timeout window has elapsed", async function () {
     const { market, nft, seller } = await loadFixture(createAuctionFixture);
 
     await time.increase(24 * 60 * 60 + 1);
     await market.triggerFinalize(1n);
+    await time.increase(await market.previewDynamicTimeout());
     await market.triggerFallbackVoid(1n);
 
     const auction = await market.getAuction(1n);
@@ -319,7 +269,7 @@ describe("FhenixFairMarket Phase 1", function () {
     await market.upgradeToAndCall(await v2Implementation.getAddress(), "0x");
 
     const upgraded = v2Factory.attach(await proxy.getAddress());
-    expect(await upgraded.contractVersion()).to.equal("phase1-v2");
+    expect(await upgraded.contractVersion()).to.equal("phase2-v2");
     expect(await upgraded.versionMarker()).to.equal(2n);
   });
 

@@ -49,6 +49,14 @@ contract FhenixFairMarket is
         uint32 bidCount;
     }
 
+    struct PendingResolutionRequest {
+        bool exists;
+        bytes32 requestId;
+        bytes32 winnerHandle;
+        bytes32 amountHandle;
+        uint64 requestedAt;
+    }
+
     error AuctionDoesNotExist(uint256 auctionId);
     error AuctionStillRunning(uint256 auctionId, uint256 endTime);
     error AuctionAlreadyEnded(uint256 auctionId, uint256 endTime);
@@ -59,7 +67,9 @@ contract FhenixFairMarket is
     error BidExceedsEscrow(uint256 auctionId, address bidder);
     error FallbackThresholdNotReached(uint256 elapsed, uint256 requiredThreshold);
     error InvalidWinningAmount(uint256 auctionId, uint256 winningAmount, uint256 availableEscrow);
+    error InvalidAVSProof(uint256 auctionId, bytes32 requestId);
     error MissingEncryptedBid(uint256 auctionId, address bidder);
+    error MissingResolutionRequest(uint256 auctionId);
     error NativeTransferFailed(address recipient, uint256 amount);
     error NoClaimableBalance(uint256 auctionId, address claimant);
     error NoEscrowLocked(uint256 auctionId, address bidder);
@@ -72,6 +82,7 @@ contract FhenixFairMarket is
     error UnexpectedAuctionState(AuctionState expected, AuctionState actual);
     error UnauthorizedAssetClaim(uint256 auctionId, address caller, address expectedRecipient);
     error WinnerRequiredForWinningAmount(uint256 auctionId, uint256 winningAmount);
+    error ResolutionAlreadyRequested(uint256 auctionId, bytes32 requestId);
     error ZeroWinningAmount(uint256 auctionId, address winner);
     error ZeroAddress();
     error ZeroValue();
@@ -87,6 +98,9 @@ contract FhenixFairMarket is
     mapping(uint256 => mapping(address => uint256)) public escrowBalances;
     mapping(uint256 => mapping(address => bool)) public hasWithdrawn;
     mapping(uint256 => mapping(address => bytes32)) private _encryptedBids;
+    mapping(uint256 => mapping(address => bool)) private _knownBidders;
+    mapping(uint256 => address[]) private _bidders;
+    mapping(uint256 => PendingResolutionRequest) private _resolutionRequests;
 
     uint256 public auctionCounter;
     uint256 private _reentrancyStatus;
@@ -109,11 +123,19 @@ contract FhenixFairMarket is
     event BidPlaced(uint256 indexed auctionId, address indexed bidder, bytes32 bidHandle);
     event EscrowLocked(uint256 indexed auctionId, address indexed bidder, uint256 amount);
     event ResolutionRecorded(uint256 indexed auctionId, address indexed winner, bytes32 winnerCiphertext);
+    event ResolutionRejected(uint256 indexed auctionId, bytes32 indexed requestId);
     event RefundClaimed(uint256 indexed auctionId, address indexed claimant, uint256 escrowRefund, uint256 compensation);
     event SellerProceedsClaimed(uint256 indexed auctionId, address indexed seller, uint256 amount);
     event AssetClaimed(uint256 indexed auctionId, address indexed recipient, uint256 tokenId);
     event SettlementDependenciesUpdated(address indexed settlementEngine, address indexed slashedPot);
     event FallbackTriggered(uint256 indexed auctionId, uint256 elapsed, uint256 threshold);
+    event FinalizationTriggered(uint256 indexed auctionId, bytes32 indexed requestId);
+    event DecryptionRequested(
+        uint256 indexed auctionId,
+        bytes32 indexed requestId,
+        bytes32 winnerHandle,
+        bytes32 amountHandle
+    );
 
     modifier auctionExists(uint256 auctionId) {
         if (!_auctions[auctionId].exists) {
@@ -160,7 +182,7 @@ contract FhenixFairMarket is
     }
 
     function contractVersion() public pure virtual returns (string memory) {
-        return "phase2";
+        return "phase3";
     }
 
     function setSettlementEngine(ISettlementEngine newSettlementEngine) external onlyOwner {
@@ -281,6 +303,10 @@ contract FhenixFairMarket is
         if (_encryptedBids[auctionId][msg.sender] == bytes32(0)) {
             auction.bidCount += 1;
         }
+        if (!_knownBidders[auctionId][msg.sender]) {
+            _knownBidders[auctionId][msg.sender] = true;
+            _bidders[auctionId].push(msg.sender);
+        }
 
         _encryptedBids[auctionId][msg.sender] = encryptedBid;
         auction.lastBlockTimestamp = uint64(block.timestamp);
@@ -294,30 +320,50 @@ contract FhenixFairMarket is
         auctionExists(auctionId)
         onlyAuctionState(auctionId, AuctionState.ACTIVE)
     {
-        if (block.timestamp < _auctions[auctionId].endTime) {
-            revert AuctionStillRunning(auctionId, _auctions[auctionId].endTime);
+        Auction storage auction = _auctions[auctionId];
+        if (block.timestamp < auction.endTime) {
+            revert AuctionStillRunning(auctionId, auction.endTime);
+        }
+
+        PendingResolutionRequest storage existingRequest = _resolutionRequests[auctionId];
+        if (existingRequest.exists) {
+            revert ResolutionAlreadyRequested(auctionId, existingRequest.requestId);
         }
 
         _observeNetwork();
         _transitionState(auctionId, AuctionState.RESOLVING);
-        _auctions[auctionId].resolvingSince = uint64(block.timestamp);
+        auction.resolvingSince = uint64(block.timestamp);
+
+        ISettlementEngine.ResolutionRequest memory nextRequest = _prepareResolutionRequest(auctionId, auction);
+        _resolutionRequests[auctionId] = PendingResolutionRequest({
+            exists: true,
+            requestId: nextRequest.requestId,
+            winnerHandle: nextRequest.winnerHandle,
+            amountHandle: nextRequest.amountHandle,
+            requestedAt: uint64(block.timestamp)
+        });
+
+        emit FinalizationTriggered(auctionId, nextRequest.requestId);
+        emit DecryptionRequested(auctionId, nextRequest.requestId, nextRequest.winnerHandle, nextRequest.amountHandle);
     }
 
     function submitResolution(
         uint256 auctionId,
         bytes32 winnerCiphertext,
-        uint256 winningAmount
-    ) external onlyOwner auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.RESOLVING) {
-        _submitResolution(auctionId, address(0), winnerCiphertext, winningAmount);
+        uint256 winningAmount,
+        bytes calldata avsProof
+    ) external onlyOwner auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.RESOLVING) returns (bool) {
+        return _submitResolution(auctionId, address(0), winnerCiphertext, winningAmount, avsProof);
     }
 
     function submitResolution(
         uint256 auctionId,
         address winner,
         bytes32 winnerCiphertext,
-        uint256 winningAmount
-    ) external onlyOwner auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.RESOLVING) {
-        _submitResolution(auctionId, winner, winnerCiphertext, winningAmount);
+        uint256 winningAmount,
+        bytes calldata avsProof
+    ) external onlyOwner auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.RESOLVING) returns (bool) {
+        return _submitResolution(auctionId, winner, winnerCiphertext, winningAmount, avsProof);
     }
 
     function cancelAuction(uint256 auctionId)
@@ -357,6 +403,7 @@ contract FhenixFairMarket is
         auction.slashAmount = auction.totalEscrow == 0 ? 0 : auction.sellerDeposit;
         _registerSlash(auctionId, auction.totalEscrow, auction.slashAmount);
         _observeNetwork();
+        delete _resolutionRequests[auctionId];
 
         NFTGuard.releaseFromEscrow(auction.nftContract, address(this), auction.seller, auction.tokenId);
         _transitionState(auctionId, AuctionState.VOIDED);
@@ -495,6 +542,24 @@ contract FhenixFairMarket is
         return _encryptedBids[auctionId][bidder];
     }
 
+    function getBidders(uint256 auctionId) external view auctionExists(auctionId) returns (address[] memory) {
+        return _bidders[auctionId];
+    }
+
+    function getResolutionRequest(uint256 auctionId)
+        external
+        view
+        auctionExists(auctionId)
+        returns (bytes32 requestId, bytes32 winnerHandle, bytes32 amountHandle, uint64 requestedAt)
+    {
+        PendingResolutionRequest storage request = _resolutionRequests[auctionId];
+        if (!request.exists) {
+            revert MissingResolutionRequest(auctionId);
+        }
+
+        return (request.requestId, request.winnerHandle, request.amountHandle, request.requestedAt);
+    }
+
     function previewDynamicTimeout() public view returns (uint256) {
         if (address(settlementEngine) == address(0)) {
             return _DEFAULT_DYNAMIC_TIMEOUT;
@@ -554,8 +619,23 @@ contract FhenixFairMarket is
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    function _submitResolution(uint256 auctionId, address winner, bytes32 winnerCiphertext, uint256 winningAmount) internal {
+    function _submitResolution(
+        uint256 auctionId,
+        address winner,
+        bytes32 winnerCiphertext,
+        uint256 winningAmount,
+        bytes calldata avsProof
+    ) internal returns (bool) {
         Auction storage auction = _auctions[auctionId];
+        PendingResolutionRequest storage request = _resolutionRequests[auctionId];
+        if (!request.exists) {
+            revert MissingResolutionRequest(auctionId);
+        }
+
+        if (address(settlementEngine) == address(0)) {
+            revert InvalidAVSProof(auctionId, request.requestId);
+        }
+
         if (winner == address(0)) {
             if (winningAmount != 0) {
                 revert WinnerRequiredForWinningAmount(auctionId, winningAmount);
@@ -575,13 +655,49 @@ contract FhenixFairMarket is
             }
         }
 
+        if (
+            !settlementEngine.verifyResolutionProof(
+                auctionId,
+                request.requestId,
+                winner,
+                winnerCiphertext,
+                winningAmount,
+                avsProof
+            )
+        ) {
+            emit ResolutionRejected(auctionId, request.requestId);
+            return false;
+        }
+
         auction.winner = winner;
         auction.winnerCiphertext = winnerCiphertext;
         auction.winningAmount = winningAmount;
+        delete _resolutionRequests[auctionId];
         _observeNetwork();
 
         _transitionState(auctionId, AuctionState.FINALIZED);
         emit ResolutionRecorded(auctionId, winner, winnerCiphertext);
+        return true;
+    }
+
+    function _prepareResolutionRequest(uint256 auctionId, Auction storage auction)
+        internal
+        view
+        returns (ISettlementEngine.ResolutionRequest memory)
+    {
+        if (address(settlementEngine) == address(0)) {
+            bytes32 requestId = keccak256(
+                abi.encode(address(this), block.chainid, auctionId, auction.bidCount, auction.endTime)
+            );
+            return
+                ISettlementEngine.ResolutionRequest({
+                    requestId: requestId,
+                    winnerHandle: keccak256(abi.encode(requestId, "winner")),
+                    amountHandle: keccak256(abi.encode(requestId, "amount"))
+                });
+        }
+
+        return settlementEngine.prepareResolutionRequest(auctionId, auction.bidCount, auction.endTime);
     }
 
     function _observeNetwork() internal {

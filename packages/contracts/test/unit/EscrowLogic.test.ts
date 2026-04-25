@@ -4,6 +4,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 
 import { createPhase2AuctionFixture, deployPhase2Fixture } from "../helpers/fixtures";
+import { buildPhase3ResolutionProof, collectEncryptedBids } from "../helpers/phase3";
 
 describe("FhenixFairMarket Phase 1", function () {
   async function deployFixture() {
@@ -18,7 +19,7 @@ describe("FhenixFairMarket Phase 1", function () {
     const { market, adapter, owner } = await loadFixture(deployFixture);
 
     await expect(market.initialize(await adapter.getAddress(), owner.address, ethers.ZeroAddress)).to.be.reverted;
-    expect(await market.contractVersion()).to.equal("phase2");
+    expect(await market.contractVersion()).to.equal("phase3");
   });
 
   it("rejects invalid initialization parameters on a fresh implementation", async function () {
@@ -167,7 +168,7 @@ describe("FhenixFairMarket Phase 1", function () {
     );
   });
 
-  it("transitions from active to resolving after the end time", async function () {
+  it("transitions from active to resolving after the end time and issues an async decryption request", async function () {
     const { market, outsider } = await loadFixture(createAuctionFixture);
 
     await time.increase(24 * 60 * 60 + 1);
@@ -178,6 +179,11 @@ describe("FhenixFairMarket Phase 1", function () {
 
     const auction = await market.getAuction(1n);
     expect(auction[5]).to.equal(2n);
+
+    const request = await market.getResolutionRequest(1n);
+    expect(request[0]).to.not.equal(ethers.ZeroHash);
+    expect(request[1]).to.not.equal(ethers.ZeroHash);
+    expect(request[2]).to.not.equal(ethers.ZeroHash);
   });
 
   it("rejects finalize calls before the auction has ended", async function () {
@@ -187,12 +193,15 @@ describe("FhenixFairMarket Phase 1", function () {
   });
 
   it("allows a no-winner resolution only when the winning amount is zero", async function () {
-    const { market, owner } = await loadFixture(createAuctionFixture);
+    const { avs, avsOperatorOne, avsOperatorTwo, market, owner } = await loadFixture(createAuctionFixture);
 
     await time.increase(24 * 60 * 60 + 1);
     await market.triggerFinalize(1n);
 
-    await expect(market.connect(owner)["submitResolution(uint256,bytes32,uint256)"](1n, ethers.ZeroHash, 0n))
+    const encryptedBids = await collectEncryptedBids(market, 1n);
+    const { proof } = await buildPhase3ResolutionProof(market, avs, 1n, encryptedBids, [avsOperatorOne, avsOperatorTwo]);
+
+    await expect(market.connect(owner)["submitResolution(uint256,bytes32,uint256,bytes)"](1n, ethers.ZeroHash, 0n, proof))
       .to.emit(market, "ResolutionRecorded")
       .withArgs(1n, ethers.ZeroAddress, ethers.ZeroHash);
 
@@ -203,13 +212,21 @@ describe("FhenixFairMarket Phase 1", function () {
   });
 
   it("rejects no-winner resolutions that try to assign a non-zero winning amount", async function () {
-    const { market, owner } = await loadFixture(createAuctionFixture);
+    const { avs, avsOperatorOne, avsOperatorTwo, market, owner } = await loadFixture(createAuctionFixture);
 
     await time.increase(24 * 60 * 60 + 1);
     await market.triggerFinalize(1n);
 
+    const encryptedBids = await collectEncryptedBids(market, 1n);
+    const { proof } = await buildPhase3ResolutionProof(market, avs, 1n, encryptedBids, [avsOperatorOne, avsOperatorTwo]);
+
     await expect(
-      market.connect(owner)["submitResolution(uint256,bytes32,uint256)"](1n, ethers.encodeBytes32String("winner"), 77n)
+      market.connect(owner)["submitResolution(uint256,bytes32,uint256,bytes)"](
+        1n,
+        ethers.encodeBytes32String("winner"),
+        77n,
+        proof
+      )
     ).to.be.revertedWithCustomError(market, "WinnerRequiredForWinningAmount");
   });
 
@@ -217,7 +234,12 @@ describe("FhenixFairMarket Phase 1", function () {
     const { market, owner } = await loadFixture(createAuctionFixture);
 
     await expect(
-      market.connect(owner)["submitResolution(uint256,bytes32,uint256)"](1n, ethers.encodeBytes32String("winner"), 10n)
+      market.connect(owner)["submitResolution(uint256,bytes32,uint256,bytes)"](
+        1n,
+        ethers.encodeBytes32String("winner"),
+        10n,
+        "0x"
+      )
     ).to.be.revertedWithCustomError(market, "UnexpectedAuctionState");
   });
 

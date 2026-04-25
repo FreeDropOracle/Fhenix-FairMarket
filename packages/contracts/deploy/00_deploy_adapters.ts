@@ -22,15 +22,21 @@ async function main() {
   const adapter = await adapterFactory.deploy();
   await adapter.waitForDeployment();
 
+  const settlementEngineFactory = await ethers.getContractFactory("SettlementEngine");
+  const settlementEngine = await settlementEngineFactory.deploy();
+  await settlementEngine.waitForDeployment();
+
   const existing = await readDeploymentFile(deploymentFile);
   const nextPayload = {
     ...existing,
-    adapter: await adapter.getAddress()
+    adapter: await adapter.getAddress(),
+    settlementEngine: await settlementEngine.getAddress()
   };
 
   await writeFile(deploymentFile, `${JSON.stringify(nextPayload, null, 2)}\n`, "utf8");
 
   console.log(`Adapter deployed to ${nextPayload.adapter}`);
+  console.log(`SettlementEngine deployed to ${nextPayload.settlementEngine}`);
 }
 
 main().catch((error) => {

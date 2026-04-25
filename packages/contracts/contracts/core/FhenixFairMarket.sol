@@ -7,7 +7,10 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
+import "../adapters/NFTGuard.sol";
 import "../interfaces/ICofheAdapter.sol";
+import "../interfaces/ISettlementEngine.sol";
+import "../interfaces/ISlashedPot.sol";
 
 contract FhenixFairMarket is
     Initializable,
@@ -36,6 +39,14 @@ contract FhenixFairMarket is
         uint64 lastBlockTimestamp;
         bytes32 winnerCiphertext;
         uint256 winningAmount;
+        address winner;
+        uint256 totalEscrow;
+        uint256 slashAmount;
+        uint64 createdAt;
+        uint64 resolvingSince;
+        bool sellerClaimed;
+        bool assetClaimed;
+        uint32 bidCount;
     }
 
     error AuctionDoesNotExist(uint256 auctionId);
@@ -44,27 +55,46 @@ contract FhenixFairMarket is
     error IncorrectSellerDeposit(uint256 expected, uint256 actual);
     error InvalidDuration(uint256 providedDuration);
     error InvalidStateTransition(AuctionState fromState, AuctionState toState);
+    error AssetAlreadyClaimed(uint256 auctionId);
+    error BidExceedsEscrow(uint256 auctionId, address bidder);
+    error FallbackThresholdNotReached(uint256 elapsed, uint256 requiredThreshold);
+    error InvalidWinningAmount(uint256 auctionId, uint256 winningAmount, uint256 availableEscrow);
+    error MissingEncryptedBid(uint256 auctionId, address bidder);
+    error NativeTransferFailed(address recipient, uint256 amount);
+    error NoClaimableBalance(uint256 auctionId, address claimant);
+    error NoEscrowLocked(uint256 auctionId, address bidder);
     error NFTNotApproved(address nftContract, uint256 tokenId);
     error NotAuctionSeller(address caller, address seller);
     error NotNFTOwner(address nftContract, uint256 tokenId, address caller);
     error ReentrancyGuardReentrantCall();
+    error SellerProceedsAlreadyClaimed(uint256 auctionId);
+    error SlashedPotNotConfigured();
     error UnexpectedAuctionState(AuctionState expected, AuctionState actual);
+    error UnauthorizedAssetClaim(uint256 auctionId, address caller, address expectedRecipient);
+    error WinnerRequiredForWinningAmount(uint256 auctionId, uint256 winningAmount);
+    error ZeroWinningAmount(uint256 auctionId, address winner);
     error ZeroAddress();
     error ZeroValue();
 
     uint256 public constant MIN_AUCTION_DURATION = 1 hours;
     uint256 public constant MAX_AUCTION_DURATION = 30 days;
+    uint256 private constant _DEFAULT_DYNAMIC_TIMEOUT = 30 minutes;
+    uint256 private constant _NETWORK_SAMPLE_CEILING = 10 minutes;
     uint256 private constant _NOT_ENTERED = 1;
     uint256 private constant _ENTERED = 2;
 
     mapping(uint256 => Auction) private _auctions;
     mapping(uint256 => mapping(address => uint256)) public escrowBalances;
     mapping(uint256 => mapping(address => bool)) public hasWithdrawn;
+    mapping(uint256 => mapping(address => bytes32)) private _encryptedBids;
 
     uint256 public auctionCounter;
     uint256 private _reentrancyStatus;
     address public slashedPot;
     ICofheAdapter public cofheAdapter;
+    ISettlementEngine public settlementEngine;
+    uint64 public lastObservationTimestamp;
+    uint64 public movingAverageBlockDelta;
 
     event AuctionCreated(
         uint256 indexed auctionId,
@@ -76,8 +106,14 @@ contract FhenixFairMarket is
         bool isVickrey
     );
     event AuctionStateChanged(uint256 indexed auctionId, AuctionState fromState, AuctionState toState);
+    event BidPlaced(uint256 indexed auctionId, address indexed bidder, bytes32 bidHandle);
     event EscrowLocked(uint256 indexed auctionId, address indexed bidder, uint256 amount);
-    event ResolutionRecorded(uint256 indexed auctionId, bytes32 winnerCiphertext, uint256 winningAmount);
+    event ResolutionRecorded(uint256 indexed auctionId, address indexed winner, bytes32 winnerCiphertext);
+    event RefundClaimed(uint256 indexed auctionId, address indexed claimant, uint256 escrowRefund, uint256 compensation);
+    event SellerProceedsClaimed(uint256 indexed auctionId, address indexed seller, uint256 amount);
+    event AssetClaimed(uint256 indexed auctionId, address indexed recipient, uint256 tokenId);
+    event SettlementDependenciesUpdated(address indexed settlementEngine, address indexed slashedPot);
+    event FallbackTriggered(uint256 indexed auctionId, uint256 elapsed, uint256 threshold);
 
     modifier auctionExists(uint256 auctionId) {
         if (!_auctions[auctionId].exists) {
@@ -124,7 +160,25 @@ contract FhenixFairMarket is
     }
 
     function contractVersion() public pure virtual returns (string memory) {
-        return "phase1";
+        return "phase2";
+    }
+
+    function setSettlementEngine(ISettlementEngine newSettlementEngine) external onlyOwner {
+        if (address(newSettlementEngine) == address(0)) {
+            revert ZeroAddress();
+        }
+
+        settlementEngine = newSettlementEngine;
+        emit SettlementDependenciesUpdated(address(newSettlementEngine), slashedPot);
+    }
+
+    function setSlashedPot(address newSlashedPot) external onlyOwner {
+        if (newSlashedPot == address(0)) {
+            revert ZeroAddress();
+        }
+
+        slashedPot = newSlashedPot;
+        emit SettlementDependenciesUpdated(address(settlementEngine), newSlashedPot);
     }
 
     function createAuction(
@@ -164,9 +218,11 @@ contract FhenixFairMarket is
         auction.sellerDeposit = sellerDeposit;
         auction.state = AuctionState.CREATED;
         auction.isVickrey = isVickrey;
+        auction.createdAt = uint64(block.timestamp);
         auction.lastBlockTimestamp = uint64(block.timestamp);
 
-        IERC721(nftContract).safeTransferFrom(msg.sender, address(this), tokenId);
+        _observeNetwork();
+        NFTGuard.lockIntoEscrow(nftContract, msg.sender, address(this), tokenId);
 
         _transitionState(auctionId, AuctionState.ACTIVE);
 
@@ -196,9 +252,41 @@ contract FhenixFairMarket is
         }
 
         escrowBalances[auctionId][msg.sender] += msg.value;
+        _auctions[auctionId].totalEscrow += msg.value;
         _auctions[auctionId].lastBlockTimestamp = uint64(block.timestamp);
+        _observeNetwork();
 
         emit EscrowLocked(auctionId, msg.sender, msg.value);
+    }
+
+    function placeBid(uint256 auctionId, bytes32 encryptedBid)
+        external
+        nonReentrant
+        auctionExists(auctionId)
+        onlyAuctionState(auctionId, AuctionState.ACTIVE)
+    {
+        Auction storage auction = _auctions[auctionId];
+        if (block.timestamp >= auction.endTime) {
+            revert AuctionAlreadyEnded(auctionId, auction.endTime);
+        }
+
+        uint256 availableEscrow = escrowBalances[auctionId][msg.sender];
+        if (availableEscrow == 0) {
+            revert NoEscrowLocked(auctionId, msg.sender);
+        }
+        if (!cofheAdapter.lte(encryptedBid, availableEscrow)) {
+            revert BidExceedsEscrow(auctionId, msg.sender);
+        }
+
+        if (_encryptedBids[auctionId][msg.sender] == bytes32(0)) {
+            auction.bidCount += 1;
+        }
+
+        _encryptedBids[auctionId][msg.sender] = encryptedBid;
+        auction.lastBlockTimestamp = uint64(block.timestamp);
+        _observeNetwork();
+
+        emit BidPlaced(auctionId, msg.sender, encryptedBid);
     }
 
     function triggerFinalize(uint256 auctionId)
@@ -210,7 +298,9 @@ contract FhenixFairMarket is
             revert AuctionStillRunning(auctionId, _auctions[auctionId].endTime);
         }
 
+        _observeNetwork();
         _transitionState(auctionId, AuctionState.RESOLVING);
+        _auctions[auctionId].resolvingSince = uint64(block.timestamp);
     }
 
     function submitResolution(
@@ -218,12 +308,16 @@ contract FhenixFairMarket is
         bytes32 winnerCiphertext,
         uint256 winningAmount
     ) external onlyOwner auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.RESOLVING) {
-        Auction storage auction = _auctions[auctionId];
-        auction.winnerCiphertext = winnerCiphertext;
-        auction.winningAmount = winningAmount;
+        _submitResolution(auctionId, address(0), winnerCiphertext, winningAmount);
+    }
 
-        _transitionState(auctionId, AuctionState.FINALIZED);
-        emit ResolutionRecorded(auctionId, winnerCiphertext, winningAmount);
+    function submitResolution(
+        uint256 auctionId,
+        address winner,
+        bytes32 winnerCiphertext,
+        uint256 winningAmount
+    ) external onlyOwner auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.RESOLVING) {
+        _submitResolution(auctionId, winner, winnerCiphertext, winningAmount);
     }
 
     function cancelAuction(uint256 auctionId)
@@ -238,21 +332,98 @@ contract FhenixFairMarket is
         }
 
         Auction storage auction = _auctions[auctionId];
-        IERC721(auction.nftContract).safeTransferFrom(address(this), auction.seller, auction.tokenId);
+        auction.slashAmount = _computeCancellationSlash(auction);
+        _registerSlash(auctionId, auction.totalEscrow, auction.slashAmount);
+        _observeNetwork();
 
+        NFTGuard.releaseFromEscrow(auction.nftContract, address(this), auction.seller, auction.tokenId);
         _transitionState(auctionId, AuctionState.CANCELLED);
     }
 
     function triggerFallbackVoid(uint256 auctionId)
         external
-        onlyOwner
+        nonReentrant
         auctionExists(auctionId)
         onlyAuctionState(auctionId, AuctionState.RESOLVING)
     {
         Auction storage auction = _auctions[auctionId];
-        IERC721(auction.nftContract).safeTransferFrom(address(this), auction.seller, auction.tokenId);
+        uint256 timeoutWindow = previewDynamicTimeout();
+        uint256 elapsed = block.timestamp - auction.resolvingSince;
 
+        if (elapsed < timeoutWindow) {
+            revert FallbackThresholdNotReached(elapsed, timeoutWindow);
+        }
+
+        auction.slashAmount = auction.totalEscrow == 0 ? 0 : auction.sellerDeposit;
+        _registerSlash(auctionId, auction.totalEscrow, auction.slashAmount);
+        _observeNetwork();
+
+        NFTGuard.releaseFromEscrow(auction.nftContract, address(this), auction.seller, auction.tokenId);
         _transitionState(auctionId, AuctionState.VOIDED);
+
+        emit FallbackTriggered(auctionId, elapsed, timeoutWindow);
+    }
+
+    function claimRefund(uint256 auctionId) external nonReentrant auctionExists(auctionId) {
+        if (hasWithdrawn[auctionId][msg.sender]) {
+            revert NoClaimableBalance(auctionId, msg.sender);
+        }
+
+        (uint256 escrowRefund, uint256 compensation) = previewRefund(auctionId, msg.sender);
+        if (escrowRefund == 0 && compensation == 0) {
+            revert NoClaimableBalance(auctionId, msg.sender);
+        }
+
+        hasWithdrawn[auctionId][msg.sender] = true;
+        if (escrowRefund != 0) {
+            escrowBalances[auctionId][msg.sender] = 0;
+            _sendValue(payable(msg.sender), escrowRefund);
+        }
+
+        if (compensation != 0) {
+            compensation = ISlashedPot(slashedPot).claimFor(auctionId, msg.sender, escrowRefund);
+        }
+
+        emit RefundClaimed(auctionId, msg.sender, escrowRefund, compensation);
+    }
+
+    function claimSellerProceeds(uint256 auctionId)
+        external
+        nonReentrant
+        auctionExists(auctionId)
+        onlyAuctionSeller(auctionId)
+    {
+        Auction storage auction = _auctions[auctionId];
+        if (auction.sellerClaimed) {
+            revert SellerProceedsAlreadyClaimed(auctionId);
+        }
+
+        uint256 sellerPayout = previewSellerPayout(auctionId);
+        if (sellerPayout == 0) {
+            revert NoClaimableBalance(auctionId, msg.sender);
+        }
+
+        auction.sellerClaimed = true;
+        _sendValue(payable(msg.sender), sellerPayout);
+
+        emit SellerProceedsClaimed(auctionId, msg.sender, sellerPayout);
+    }
+
+    function claimAsset(uint256 auctionId) external nonReentrant auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.FINALIZED) {
+        Auction storage auction = _auctions[auctionId];
+        if (auction.assetClaimed) {
+            revert AssetAlreadyClaimed(auctionId);
+        }
+
+        address expectedRecipient = auction.winner == address(0) ? auction.seller : auction.winner;
+        if (msg.sender != expectedRecipient) {
+            revert UnauthorizedAssetClaim(auctionId, msg.sender, expectedRecipient);
+        }
+
+        auction.assetClaimed = true;
+        NFTGuard.releaseFromEscrow(auction.nftContract, address(this), expectedRecipient, auction.tokenId);
+
+        emit AssetClaimed(auctionId, expectedRecipient, auction.tokenId);
     }
 
     function getAuction(uint256 auctionId)
@@ -287,11 +458,212 @@ contract FhenixFairMarket is
         );
     }
 
+    function getAuctionPhase2Details(uint256 auctionId)
+        external
+        view
+        auctionExists(auctionId)
+        returns (
+            address winner,
+            uint256 totalEscrow,
+            uint256 slashAmount,
+            uint64 createdAt,
+            uint64 resolvingSince,
+            bool sellerClaimed,
+            bool assetClaimed,
+            uint32 bidCount
+        )
+    {
+        Auction storage auction = _auctions[auctionId];
+        return (
+            auction.winner,
+            auction.totalEscrow,
+            auction.slashAmount,
+            auction.createdAt,
+            auction.resolvingSince,
+            auction.sellerClaimed,
+            auction.assetClaimed,
+            auction.bidCount
+        );
+    }
+
+    function getEncryptedBid(uint256 auctionId, address bidder)
+        external
+        view
+        auctionExists(auctionId)
+        returns (bytes32)
+    {
+        return _encryptedBids[auctionId][bidder];
+    }
+
+    function previewDynamicTimeout() public view returns (uint256) {
+        if (address(settlementEngine) == address(0)) {
+            return _DEFAULT_DYNAMIC_TIMEOUT;
+        }
+
+        return settlementEngine.computeDynamicTimeout(movingAverageBlockDelta);
+    }
+
+    function previewRefund(uint256 auctionId, address claimant)
+        public
+        view
+        auctionExists(auctionId)
+        returns (uint256 escrowRefund, uint256 compensation)
+    {
+        Auction storage auction = _auctions[auctionId];
+        uint256 escrowContribution = escrowBalances[auctionId][claimant];
+
+        if (auction.state == AuctionState.FINALIZED) {
+            if (claimant == auction.winner) {
+                escrowRefund = _computeWinningRefund(escrowContribution, auction.winningAmount);
+            } else {
+                escrowRefund = escrowContribution;
+            }
+
+            return (escrowRefund, 0);
+        }
+
+        if (auction.state == AuctionState.CANCELLED || auction.state == AuctionState.VOIDED) {
+            escrowRefund = escrowContribution;
+            if (escrowContribution != 0 && auction.slashAmount != 0 && slashedPot != address(0)) {
+                compensation = ISlashedPot(slashedPot).previewClaim(auctionId, escrowContribution);
+            }
+
+            return (escrowRefund, compensation);
+        }
+
+        return (0, 0);
+    }
+
+    function previewSellerPayout(uint256 auctionId) public view auctionExists(auctionId) returns (uint256) {
+        Auction storage auction = _auctions[auctionId];
+
+        if (auction.state == AuctionState.FINALIZED) {
+            return _computeSellerPayout(auction.sellerDeposit, auction.winningAmount);
+        }
+
+        if (auction.state == AuctionState.CANCELLED || auction.state == AuctionState.VOIDED) {
+            return _computeSellerCancellationPayout(auction.sellerDeposit, auction.slashAmount);
+        }
+
+        return 0;
+    }
+
     function onERC721Received(address, address, uint256, bytes calldata) external pure override returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    function _submitResolution(uint256 auctionId, address winner, bytes32 winnerCiphertext, uint256 winningAmount) internal {
+        Auction storage auction = _auctions[auctionId];
+        if (winner == address(0)) {
+            if (winningAmount != 0) {
+                revert WinnerRequiredForWinningAmount(auctionId, winningAmount);
+            }
+        } else {
+            if (winningAmount == 0) {
+                revert ZeroWinningAmount(auctionId, winner);
+            }
+            if (_encryptedBids[auctionId][winner] == bytes32(0)) {
+                revert MissingEncryptedBid(auctionId, winner);
+            }
+            if (!cofheAdapter.lte(winnerCiphertext, escrowBalances[auctionId][winner])) {
+                revert BidExceedsEscrow(auctionId, winner);
+            }
+            if (winningAmount > escrowBalances[auctionId][winner]) {
+                revert InvalidWinningAmount(auctionId, winningAmount, escrowBalances[auctionId][winner]);
+            }
+        }
+
+        auction.winner = winner;
+        auction.winnerCiphertext = winnerCiphertext;
+        auction.winningAmount = winningAmount;
+        _observeNetwork();
+
+        _transitionState(auctionId, AuctionState.FINALIZED);
+        emit ResolutionRecorded(auctionId, winner, winnerCiphertext);
+    }
+
+    function _observeNetwork() internal {
+        uint64 currentTimestamp = uint64(block.timestamp);
+        if (lastObservationTimestamp == 0) {
+            lastObservationTimestamp = currentTimestamp;
+            return;
+        }
+
+        uint64 delta = currentTimestamp - lastObservationTimestamp;
+        if (delta == 0) {
+            return;
+        }
+        if (delta > _NETWORK_SAMPLE_CEILING) {
+            lastObservationTimestamp = currentTimestamp;
+            return;
+        }
+
+        if (movingAverageBlockDelta == 0) {
+            movingAverageBlockDelta = delta;
+        } else {
+            movingAverageBlockDelta = uint64((uint256(movingAverageBlockDelta) * 7 + delta) / 8);
+        }
+
+        lastObservationTimestamp = currentTimestamp;
+    }
+
+    function _registerSlash(uint256 auctionId, uint256 totalEscrow, uint256 slashAmount) internal {
+        if (slashAmount == 0) {
+            return;
+        }
+        if (slashedPot == address(0)) {
+            revert SlashedPotNotConfigured();
+        }
+
+        ISlashedPot(slashedPot).registerSlash{value: slashAmount}(auctionId, totalEscrow);
+    }
+
+    function _computeWinningRefund(uint256 escrowContribution, uint256 winningAmount) internal view returns (uint256) {
+        if (address(settlementEngine) == address(0)) {
+            return winningAmount >= escrowContribution ? 0 : escrowContribution - winningAmount;
+        }
+
+        return settlementEngine.computeWinningRefund(escrowContribution, winningAmount);
+    }
+
+    function _computeSellerPayout(uint256 sellerDeposit, uint256 winningAmount) internal view returns (uint256) {
+        if (address(settlementEngine) == address(0)) {
+            return sellerDeposit + winningAmount;
+        }
+
+        return settlementEngine.computeSellerPayout(sellerDeposit, winningAmount);
+    }
+
+    function _computeSellerCancellationPayout(uint256 sellerDeposit, uint256 slashAmount) internal view returns (uint256) {
+        if (address(settlementEngine) == address(0)) {
+            return slashAmount >= sellerDeposit ? 0 : sellerDeposit - slashAmount;
+        }
+
+        return settlementEngine.computeSellerCancellationPayout(sellerDeposit, slashAmount);
+    }
+
+    function _computeCancellationSlash(Auction storage auction) internal view returns (uint256) {
+        if (auction.totalEscrow == 0) {
+            return 0;
+        }
+        if (address(settlementEngine) == address(0)) {
+            return auction.sellerDeposit / 2;
+        }
+
+        uint256 elapsed = block.timestamp - auction.createdAt;
+        uint256 duration = uint256(auction.endTime) - auction.createdAt;
+
+        return settlementEngine.computeCancellationSlash(auction.sellerDeposit, elapsed, duration, auction.totalEscrow);
+    }
+
+    function _sendValue(address payable recipient, uint256 amount) internal {
+        (bool success,) = recipient.call{value: amount}("");
+        if (!success) {
+            revert NativeTransferFailed(recipient, amount);
+        }
+    }
 
     function _transitionState(uint256 auctionId, AuctionState nextState) internal {
         Auction storage auction = _auctions[auctionId];

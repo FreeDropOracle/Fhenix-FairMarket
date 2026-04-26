@@ -79,9 +79,18 @@ export async function createPhase2AuctionFixture() {
   await nft.connect(seller).mint(seller.address);
   await nft.connect(seller).approve(await market.getAddress(), 1n);
 
-  await market.connect(seller).createAuction(await nft.getAddress(), 1n, 24 * 60 * 60, ethers.parseEther("1"), true, {
-    value: ethers.parseEther("1")
-  });
+  await market
+    .connect(seller)
+    ["createAuction(address,uint256,uint256,uint256,bool)"](
+      await nft.getAddress(),
+      1n,
+      24 * 60 * 60,
+      ethers.parseEther("1"),
+      true,
+      {
+        value: ethers.parseEther("1")
+      }
+    );
 
   return context;
 }

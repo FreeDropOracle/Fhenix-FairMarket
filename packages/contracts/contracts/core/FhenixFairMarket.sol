@@ -50,6 +50,7 @@ contract FhenixFairMarket is
         bool sellerClaimed;
         bool assetClaimed;
         uint32 bidCount;
+        uint256 startingPrice;
     }
 
     struct PendingResolutionRequest {
@@ -67,6 +68,7 @@ contract FhenixFairMarket is
     error InvalidDuration(uint256 providedDuration);
     error InvalidStateTransition(AuctionState fromState, AuctionState toState);
     error AssetAlreadyClaimed(uint256 auctionId);
+    error BidBelowStartingPrice(uint256 auctionId, address bidder, uint256 requiredMinimum);
     error BidExceedsEscrow(uint256 auctionId, address bidder);
     error FinalizeRewardAlreadyClaimed(uint256 auctionId);
     error FinalizeRewardNotReady(uint256 auctionId, AuctionState currentState);
@@ -74,6 +76,7 @@ contract FhenixFairMarket is
     error InvalidWinningAmount(uint256 auctionId, uint256 winningAmount, uint256 availableEscrow);
     error InvalidAVSProof(uint256 auctionId, bytes32 requestId);
     error InvalidDependency(address dependency);
+    error InvalidStartingPrice(uint256 providedStartingPrice);
     error MissingEncryptedBid(uint256 auctionId, address bidder);
     error MissingResolutionRequest(uint256 auctionId);
     error NativeTransferFailed(address recipient, uint256 amount);
@@ -89,6 +92,7 @@ contract FhenixFairMarket is
     error UnauthorizedAssetClaim(uint256 auctionId, address caller, address expectedRecipient);
     error UnauthorizedFinalizeRewardClaim(uint256 auctionId, address caller, address executor);
     error WinnerRequiredForWinningAmount(uint256 auctionId, uint256 winningAmount);
+    error WinningAmountBelowStartingPrice(uint256 auctionId, uint256 winningAmount, uint256 requiredMinimum);
     error ResolutionAlreadyRequested(uint256 auctionId, bytes32 requestId);
     error ZeroWinningAmount(uint256 auctionId, address winner);
     error ZeroAddress();
@@ -99,6 +103,7 @@ contract FhenixFairMarket is
     uint256 private constant _BPS_DENOMINATOR = 10_000;
     uint256 private constant _DEFAULT_DYNAMIC_TIMEOUT = 30 minutes;
     uint256 private constant _KEEPER_FINALIZE_REWARD_BPS = 20;
+    uint256 private constant _MAX_CONFIDENTIAL_BID_VALUE = type(uint32).max;
     uint256 private constant _NETWORK_SAMPLE_CEILING = 10 minutes;
     uint256 private constant _NOT_ENTERED = 1;
     uint256 private constant _ENTERED = 2;
@@ -234,11 +239,36 @@ contract FhenixFairMarket is
         uint256 sellerDeposit,
         bool isVickrey
     ) external payable nonReentrant returns (uint256 auctionId) {
+        return _createAuction(nftContract, tokenId, duration, 0, sellerDeposit, isVickrey);
+    }
+
+    function createAuction(
+        address nftContract,
+        uint256 tokenId,
+        uint256 duration,
+        uint256 startingPrice,
+        uint256 sellerDeposit,
+        bool isVickrey
+    ) external payable nonReentrant returns (uint256 auctionId) {
+        return _createAuction(nftContract, tokenId, duration, startingPrice, sellerDeposit, isVickrey);
+    }
+
+    function _createAuction(
+        address nftContract,
+        uint256 tokenId,
+        uint256 duration,
+        uint256 startingPrice,
+        uint256 sellerDeposit,
+        bool isVickrey
+    ) internal returns (uint256 auctionId) {
         if (nftContract == address(0)) {
             revert ZeroAddress();
         }
         if (duration < MIN_AUCTION_DURATION || duration > MAX_AUCTION_DURATION) {
             revert InvalidDuration(duration);
+        }
+        if (startingPrice > _MAX_CONFIDENTIAL_BID_VALUE) {
+            revert InvalidStartingPrice(startingPrice);
         }
         if (msg.value == 0 || msg.value != sellerDeposit) {
             revert IncorrectSellerDeposit(sellerDeposit, msg.value);
@@ -266,6 +296,7 @@ contract FhenixFairMarket is
         auction.isVickrey = isVickrey;
         auction.createdAt = uint64(block.timestamp);
         auction.lastBlockTimestamp = uint64(block.timestamp);
+        auction.startingPrice = startingPrice;
 
         _observeNetwork();
         _transitionState(auctionId, AuctionState.ACTIVE);
@@ -318,6 +349,9 @@ contract FhenixFairMarket is
         uint256 availableEscrow = escrowBalances[auctionId][msg.sender];
         if (availableEscrow == 0) {
             revert NoEscrowLocked(auctionId, msg.sender);
+        }
+        if (auction.startingPrice != 0 && !cofheAdapter.gt(encryptedBid, auction.startingPrice - 1)) {
+            revert BidBelowStartingPrice(auctionId, msg.sender, auction.startingPrice);
         }
         if (!cofheAdapter.lte(encryptedBid, availableEscrow)) {
             revert BidExceedsEscrow(auctionId, msg.sender);
@@ -599,6 +633,10 @@ contract FhenixFairMarket is
         );
     }
 
+    function getAuctionStartingPrice(uint256 auctionId) external view auctionExists(auctionId) returns (uint256) {
+        return _auctions[auctionId].startingPrice;
+    }
+
     function getEncryptedBid(uint256 auctionId, address bidder)
         external
         view
@@ -743,6 +781,9 @@ contract FhenixFairMarket is
         } else {
             if (winningAmount == 0) {
                 revert ZeroWinningAmount(auctionId, winner);
+            }
+            if (winningAmount < auction.startingPrice) {
+                revert WinningAmountBelowStartingPrice(auctionId, winningAmount, auction.startingPrice);
             }
             if (_encryptedBids[auctionId][winner] == bytes32(0)) {
                 revert MissingEncryptedBid(auctionId, winner);

@@ -11,6 +11,7 @@ export interface CoFheDispatchJob {
   requestId: string;
   winnerHandle: string;
   amountHandle: string;
+  startingPrice: bigint;
   bids: readonly EncryptedBidRecord[];
 }
 
@@ -92,7 +93,7 @@ export class LocalCofheBatchClient implements FheosBatchClient {
   async resolveBatch(jobs: readonly CoFheDispatchJob[]): Promise<CoFheResolution[]> {
     return jobs.map((job) => {
       const startedAt = this.now();
-      const winner = pickHighestEncryptedBid(job.bids);
+      const winner = pickHighestEncryptedBid(job.bids, job.startingPrice);
       return {
         auctionId: job.auctionId,
         requestId: job.requestId,
@@ -132,6 +133,7 @@ export class HttpFheosBatchClient implements FheosBatchClient {
             requestId: job.requestId,
             winnerHandle: job.winnerHandle,
             amountHandle: job.amountHandle,
+            startingPrice: job.startingPrice.toString(),
             bids: job.bids.map((bid) => ({
               bidder: bid.bidder,
               encryptedBid: bid.encryptedBid,
@@ -258,13 +260,19 @@ export function decodeEncryptedUint32(ciphertext: string): bigint {
   return parsed & ((1n << 248n) - 1n);
 }
 
-export function pickHighestEncryptedBid(bids: readonly EncryptedBidRecord[]): EncryptedBidRecord | null {
+export function pickHighestEncryptedBid(
+  bids: readonly EncryptedBidRecord[],
+  startingPrice: bigint = 0n
+): EncryptedBidRecord | null {
   let winner: EncryptedBidRecord | null = null;
   let highestBid = -1n;
 
   for (const bid of bids) {
     const amount = decodeEncryptedUint32(bid.encryptedBid);
     if (amount > bid.availableEscrow) {
+      continue;
+    }
+    if (amount < startingPrice) {
       continue;
     }
     if (winner === null || amount > highestBid) {

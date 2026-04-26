@@ -44,6 +44,7 @@ export interface StoredDispatchJob {
   requestId: string;
   winnerHandle: string;
   amountHandle: string;
+  startingPrice: bigint;
   bids: StoredDispatchBid[];
   enqueuedAtMs: number;
   dispatchedAtMs?: number;
@@ -390,6 +391,7 @@ function serializeDispatchJob(record: StoredDispatchJob): Record<string, unknown
   return {
     ...record,
     auctionId: record.auctionId.toString(),
+    startingPrice: record.startingPrice.toString(),
     bids: record.bids.map((bid) => ({
       ...bid,
       availableEscrow: bid.availableEscrow.toString()
@@ -403,6 +405,7 @@ function deserializeDispatchJob(record: Record<string, unknown>): StoredDispatch
     requestId: String(record.requestId ?? ""),
     winnerHandle: String(record.winnerHandle ?? ""),
     amountHandle: String(record.amountHandle ?? ""),
+    startingPrice: BigInt(String(record.startingPrice ?? "0")),
     bids: Array.isArray(record.bids)
       ? record.bids.map((rawBid) => {
           const bid = rawBid as Record<string, unknown>;

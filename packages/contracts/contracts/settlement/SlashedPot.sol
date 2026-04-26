@@ -86,12 +86,11 @@ contract SlashedPot is Ownable, ISlashedPot {
             return 0;
         }
 
+        emit CompensationClaimed(auctionId, recipient, amount);
         // slither-disable-next-line low-level-calls
         (bool success,) = payable(recipient).call{value: amount}("");
         if (!success) {
             revert NativeTransferFailed(recipient, amount);
         }
-
-        emit CompensationClaimed(auctionId, recipient, amount);
     }
 }

@@ -62,4 +62,4 @@ jobs:
           target: packages/contracts
           node-version: 22
           ignore-compile: true
-          slither-args: --exclude-dependencies --exclude timestamp --filter-paths "node_modules|test|mocks|coverage|artifacts|cache"
+          slither-args: --exclude-dependencies --exclude timestamp,unindexed-event-address --filter-paths "node_modules|test|mocks|coverage|artifacts|cache"

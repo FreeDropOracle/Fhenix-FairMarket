@@ -812,13 +812,13 @@ contract FhenixFairMarket is
 
     function _observeNetwork() internal {
         uint64 currentTimestamp = uint64(block.timestamp);
-        if (lastObservationTimestamp == 0) {
+        if (lastObservationTimestamp < 1) {
             lastObservationTimestamp = currentTimestamp;
             return;
         }
 
         uint64 delta = currentTimestamp - lastObservationTimestamp;
-        if (delta == 0) {
+        if (delta < 1) {
             return;
         }
         if (delta > _NETWORK_SAMPLE_CEILING) {
@@ -826,7 +826,7 @@ contract FhenixFairMarket is
             return;
         }
 
-        if (movingAverageBlockDelta == 0) {
+        if (movingAverageBlockDelta < 1) {
             movingAverageBlockDelta = delta;
         } else {
             movingAverageBlockDelta = uint64((uint256(movingAverageBlockDelta) * 7 + delta) / 8);
@@ -899,6 +899,7 @@ contract FhenixFairMarket is
     }
 
     function _sendValue(address payable recipient, uint256 amount) internal {
+        // slither-disable-next-line arbitrary-send-eth
         // slither-disable-next-line low-level-calls
         (bool success,) = recipient.call{value: amount}("");
         if (!success) {

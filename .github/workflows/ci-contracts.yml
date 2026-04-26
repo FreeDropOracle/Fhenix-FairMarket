@@ -60,4 +60,6 @@ jobs:
         uses: crytic/slither-action@v0.4.0
         with:
           target: packages/contracts
+          node-version: 22
+          ignore-compile: true
           slither-args: --filter-paths "node_modules|test|mocks|coverage|artifacts|cache"

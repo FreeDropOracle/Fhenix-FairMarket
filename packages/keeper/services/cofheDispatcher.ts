@@ -15,6 +15,7 @@ export interface CoFheDispatchJob {
 }
 
 export interface CoFheResolution {
+  auctionId: bigint;
   requestId: string;
   winnerHandle: string;
   amountHandle: string;
@@ -93,6 +94,7 @@ export class LocalCofheBatchClient implements FheosBatchClient {
       const startedAt = this.now();
       const winner = pickHighestEncryptedBid(job.bids);
       return {
+        auctionId: job.auctionId,
         requestId: job.requestId,
         winnerHandle: job.winnerHandle,
         amountHandle: job.amountHandle,
@@ -146,6 +148,7 @@ export class HttpFheosBatchClient implements FheosBatchClient {
 
       const payload = (await response.json()) as Array<Record<string, unknown>>;
       return payload.map((entry) => ({
+        auctionId: BigInt(String(entry.auctionId ?? "0")),
         requestId: String(entry.requestId ?? ""),
         winnerHandle: String(entry.winnerHandle ?? ""),
         amountHandle: String(entry.amountHandle ?? ""),

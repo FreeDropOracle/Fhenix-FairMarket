@@ -16,6 +16,7 @@ export interface KeeperConfig {
   lockTtlMs: number;
   maxPriorityFeeGwei: number;
   avsThreshold: number;
+  avsOperatorPrivateKeys: string[];
   fheosEndpoint: string;
   fheosApiKey: string;
   stateFilePath: string;
@@ -41,6 +42,7 @@ export const defaultKeeperConfig: KeeperConfig = {
   lockTtlMs: 90_000,
   maxPriorityFeeGwei: 2,
   avsThreshold: 3,
+  avsOperatorPrivateKeys: [],
   fheosEndpoint: "https://fheos.fhenix.zone",
   fheosApiKey: "",
   stateFilePath: "./state/keeper-state.json",
@@ -77,6 +79,7 @@ export function createKeeperConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
     lockTtlMs: resolveInteger(env.KEEPER_LOCK_TTL_MS, defaultKeeperConfig.lockTtlMs),
     maxPriorityFeeGwei: resolveInteger(env.KEEPER_MAX_PRIORITY_FEE_GWEI, defaultKeeperConfig.maxPriorityFeeGwei),
     avsThreshold: resolveInteger(env.KEEPER_AVS_THRESHOLD, defaultKeeperConfig.avsThreshold),
+    avsOperatorPrivateKeys: resolveList(env.KEEPER_AVS_OPERATOR_KEYS),
     fheosEndpoint: env.KEEPER_FHEOS_ENDPOINT ?? defaultKeeperConfig.fheosEndpoint,
     fheosApiKey: env.KEEPER_FHEOS_API_KEY ?? defaultKeeperConfig.fheosApiKey,
     stateFilePath: env.KEEPER_STATE_FILE_PATH ?? defaultKeeperConfig.stateFilePath,
@@ -92,4 +95,15 @@ function resolveInteger(rawValue: string | undefined, fallback: number): number 
 
   const parsed = Number.parseInt(rawValue, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function resolveList(rawValue: string | undefined): string[] {
+  if (rawValue === undefined || rawValue.trim() === "") {
+    return [];
+  }
+
+  return rawValue
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== "");
 }

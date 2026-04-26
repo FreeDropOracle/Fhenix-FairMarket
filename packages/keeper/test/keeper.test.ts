@@ -30,6 +30,7 @@ async function main(): Promise<void> {
     assert.equal(config.fheosApiKey, "secret");
     assert.equal(config.finalizeLeadSeconds, 60);
     assert.equal(config.requestTimeoutMs, 120_000);
+    assert.deepEqual(config.avsOperatorPrivateKeys, []);
   });
 
   await runCase("auction monitor schedules due auctions, estimates reward, and records retries", async () => {
@@ -118,6 +119,60 @@ async function main(): Promise<void> {
     assert.equal(result.acquired, false);
     assert.equal(raceConditions.length, 1);
     assert.equal(raceConditions[0].reason, "distributed-lock-held");
+  });
+
+  await runCase("auction monitor stops retrying once the chain state has already advanced", async () => {
+    const store = new InMemoryAuctionStateStore();
+    const readerState = { current: 1n };
+    const reader: MarketMonitorReader = {
+      getAuction: async () => ["0x0", 0n, "0x0", 900n, 1_000n, readerState.current, true, 0n, "0x0", 0n],
+      getResolutionRequest: async () => ["0xreq", "0xwinner", "0xamount", 0n]
+    };
+
+    const monitor = new AuctionMonitor(
+      reader,
+      createKeeperConfigFromEnv({
+        KEEPER_MAX_RETRIES: "3",
+        KEEPER_RETRY_BASE_DELAY_MS: "10"
+      }),
+      store,
+      new InMemoryLockCoordinator(() => 9_000),
+      () => 9_000,
+      async () => Promise.resolve()
+    );
+
+    await monitor.trackAuction({
+      auctionId: 3n,
+      state: 1n,
+      endTime: 1n,
+      sellerDeposit: 1_000n
+    });
+
+    let attempts = 0;
+    const result = await monitor.attemptFinalize(
+      {
+        auctionId: 3n,
+        state: 1n,
+        endTime: 1n,
+        sellerDeposit: 1_000n,
+        trackedAtMs: 9_000,
+        retryCount: 0
+      },
+      "keeper-a",
+      {
+        triggerFinalize: async () => {
+          attempts += 1;
+          readerState.current = 2n;
+          throw new Error("already finalized elsewhere");
+        }
+      }
+    );
+
+    const syncedAuction = await store.getAuction(3n);
+    assert.equal(attempts, 1);
+    assert.equal(result.success, false);
+    assert.equal(result.error, "auction-state-advanced:2");
+    assert.equal(syncedAuction?.state, 2n);
   });
 
   await runCase("cofhe dispatcher enforces max batch size, rejects duplicates, and stores metrics", async () => {

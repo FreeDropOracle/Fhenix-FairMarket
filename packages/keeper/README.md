@@ -38,6 +38,15 @@ Optional observability services:
 docker compose --env-file packages/keeper/.env.example -f packages/keeper/docker-compose.yml --profile observability up --build
 ```
 
+With the committed example file the services start in `dry-run` mode on purpose.
+To execute a real local lifecycle you must fill:
+
+- `KEEPER_MARKET_ADDRESS`
+- `KEEPER_AVS_ADDRESS`
+- `PRIVATE_KEY`
+- `KEEPER_AVS_OPERATOR_KEYS`
+- optionally `KEEPER_FHEOS_API_KEY` for the live endpoint
+
 Ports:
 
 - `9401` auction monitor metrics
@@ -50,5 +59,5 @@ Ports:
 
 - Redis is used for the distributed finalize lock and per-auction nonce coordination.
 - Auction state and symbolic slashing logs are persisted under `packages/keeper/state/`.
-- The current runner wires the live chain path for `auction-monitor` and keeps the dispatcher/AVS roles ready for queue-driven local simulation.
+- The runner now backfills auctions from chain state, queues resolving auctions for dispatch, and forwards completed resolutions to the AVS submitter when keys are configured.
 - For real secrets, pass `--env-file packages/keeper/.env` to override the example values.

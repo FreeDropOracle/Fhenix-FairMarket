@@ -60,7 +60,8 @@ export class AuctionMonitor {
     private readonly config: KeeperConfig = createKeeperConfig(),
     private readonly store: AuctionStateStore = new InMemoryAuctionStateStore(),
     private readonly lockCoordinator: FinalizeLockCoordinator = new InMemoryLockCoordinator(),
-    private readonly now: () => number = () => Date.now()
+    private readonly now: () => number = () => Date.now(),
+    private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
   ) {}
 
   async scanExpiredAuctions(auctionIds: readonly bigint[], now: bigint): Promise<bigint[]> {
@@ -90,13 +91,15 @@ export class AuctionMonitor {
   }
 
   async trackAuction(snapshot: AuctionSnapshot): Promise<void> {
+    const existing = await this.store.getAuction(snapshot.auctionId);
     await this.store.upsertAuction({
       auctionId: snapshot.auctionId,
       state: snapshot.state,
       endTime: snapshot.endTime,
       sellerDeposit: snapshot.sellerDeposit,
       trackedAtMs: this.now(),
-      retryCount: 0
+      retryCount: existing?.retryCount ?? 0,
+      lastFinalizeAttemptAtMs: existing?.lastFinalizeAttemptAtMs
     });
   }
 
@@ -163,6 +166,11 @@ export class AuctionMonitor {
             priorityFeeGwei: this.config.maxPriorityFeeGwei
           });
 
+          const syncedAuction = await this.synchronizeAuction(auction.auctionId).catch(async () => {
+            await this.store.updateAuctionState(auction.auctionId, 2n, this.now());
+            return undefined;
+          });
+
           await this.store.recordFinalizeAttempt({
             auctionId: auction.auctionId,
             executionNonce: reservation.executionNonce,
@@ -180,7 +188,7 @@ export class AuctionMonitor {
             auctionId: auction.auctionId,
             executionNonce: reservation.executionNonce,
             acquired: true,
-            success: true,
+            success: syncedAuction?.state !== 0n,
             rewardEstimateWei: receipt.incentiveWei ?? rewardEstimateWei,
             backoffMs,
             txHash: receipt.txHash,
@@ -200,6 +208,23 @@ export class AuctionMonitor {
             error: lastError.message
           };
           await this.store.recordFinalizeAttempt(record);
+
+          const currentState = await this.synchronizeAuctionState(auction.auctionId);
+          if (currentState !== undefined && currentState !== 1n) {
+            return {
+              auctionId: auction.auctionId,
+              executionNonce: reservation.executionNonce,
+              acquired: true,
+              success: false,
+              rewardEstimateWei,
+              backoffMs,
+              error: `auction-state-advanced:${currentState.toString()}`
+            };
+          }
+
+          if (attempt < this.config.maxRetries) {
+            await this.sleep(backoffMs);
+          }
         }
       }
 
@@ -214,6 +239,15 @@ export class AuctionMonitor {
       };
     } finally {
       await this.lockCoordinator.releaseLock(auction.auctionId, keeperId);
+    }
+  }
+
+  private async synchronizeAuctionState(auctionId: bigint): Promise<bigint | undefined> {
+    try {
+      const snapshot = await this.synchronizeAuction(auctionId);
+      return snapshot.state;
+    } catch {
+      return undefined;
     }
   }
 }

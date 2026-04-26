@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
@@ -18,6 +19,8 @@ contract FhenixFairMarket is
     OwnableUpgradeable,
     IERC721Receiver
 {
+    using Address for address payable;
+
     enum AuctionState {
         CREATED,
         ACTIVE,
@@ -836,10 +839,10 @@ contract FhenixFairMarket is
     }
 
     function _registerSlash(uint256 auctionId, uint256 totalEscrow, uint256 slashAmount) internal {
-        if (slashAmount == 0) {
+        if (slashAmount < 1) {
             return;
         }
-        if (address(slashedPot) == address(0)) {
+        if (address(slashedPot).code.length < 1) {
             revert SlashedPotNotConfigured();
         }
 
@@ -899,12 +902,7 @@ contract FhenixFairMarket is
     }
 
     function _sendValue(address payable recipient, uint256 amount) internal {
-        // slither-disable-next-line arbitrary-send-eth
-        // slither-disable-next-line low-level-calls
-        (bool success,) = recipient.call{value: amount}("");
-        if (!success) {
-            revert NativeTransferFailed(recipient, amount);
-        }
+        recipient.sendValue(amount);
     }
 
     function _requireDependency(address dependency) internal view {

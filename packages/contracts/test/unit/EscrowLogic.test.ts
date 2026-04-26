@@ -49,9 +49,16 @@ describe("FhenixFairMarket Phase 1", function () {
     await expect(
       market
         .connect(seller)
-        .createAuction(await nft.getAddress(), 1n, 24 * 60 * 60, ethers.parseEther("1"), true, {
-          value: ethers.parseEther("1")
-        })
+        ["createAuction(address,uint256,uint256,uint256,bool)"](
+          await nft.getAddress(),
+          1n,
+          24 * 60 * 60,
+          ethers.parseEther("1"),
+          true,
+          {
+            value: ethers.parseEther("1")
+          }
+        )
     )
       .to.emit(market, "AuctionCreated")
       .withArgs(1n, seller.address, await nft.getAddress(), 1n, anyValue, ethers.parseEther("1"), true);
@@ -63,6 +70,29 @@ describe("FhenixFairMarket Phase 1", function () {
     expect(await nft.ownerOf(1n)).to.equal(await market.getAddress());
   });
 
+  it("stores a public starting price when the seller configures an opening bid", async function () {
+    const { market, nft, seller } = await loadFixture(deployFixture);
+
+    await nft.connect(seller).mint(seller.address);
+    await nft.connect(seller).approve(await market.getAddress(), 1n);
+
+    await market
+      .connect(seller)
+      ["createAuction(address,uint256,uint256,uint256,uint256,bool)"](
+        await nft.getAddress(),
+        1n,
+        24 * 60 * 60,
+        400n,
+        ethers.parseEther("1"),
+        true,
+        {
+          value: ethers.parseEther("1")
+        }
+      );
+
+    expect(await market.getAuctionStartingPrice(1n)).to.equal(400n);
+  });
+
   it("rejects auction creation when the seller is not the NFT owner", async function () {
     const { market, nft, outsider } = await loadFixture(deployFixture);
 
@@ -70,9 +100,16 @@ describe("FhenixFairMarket Phase 1", function () {
     await nft.connect(outsider).approve(await market.getAddress(), 1n);
 
     await expect(
-      market.createAuction(await nft.getAddress(), 1n, 24 * 60 * 60, ethers.parseEther("1"), false, {
-        value: ethers.parseEther("1")
-      })
+      market["createAuction(address,uint256,uint256,uint256,bool)"](
+        await nft.getAddress(),
+        1n,
+        24 * 60 * 60,
+        ethers.parseEther("1"),
+        false,
+        {
+          value: ethers.parseEther("1")
+        }
+      )
     ).to.be.revertedWithCustomError(market, "NotNFTOwner");
   });
 
@@ -80,9 +117,16 @@ describe("FhenixFairMarket Phase 1", function () {
     const { market } = await loadFixture(deployFixture);
 
     await expect(
-      market.createAuction(ethers.ZeroAddress, 1n, 24 * 60 * 60, ethers.parseEther("1"), false, {
-        value: ethers.parseEther("1")
-      })
+      market["createAuction(address,uint256,uint256,uint256,bool)"](
+        ethers.ZeroAddress,
+        1n,
+        24 * 60 * 60,
+        ethers.parseEther("1"),
+        false,
+        {
+          value: ethers.parseEther("1")
+        }
+      )
     ).to.be.revertedWithCustomError(market, "ZeroAddress");
   });
 
@@ -93,18 +137,57 @@ describe("FhenixFairMarket Phase 1", function () {
     await nft.connect(seller).approve(await market.getAddress(), 1n);
 
     await expect(
-      market.connect(seller).createAuction(await nft.getAddress(), 1n, 60, ethers.parseEther("1"), false, {
-        value: ethers.parseEther("1")
-      })
+      market
+        .connect(seller)
+        ["createAuction(address,uint256,uint256,uint256,bool)"](
+          await nft.getAddress(),
+          1n,
+          60,
+          ethers.parseEther("1"),
+          false,
+          {
+            value: ethers.parseEther("1")
+          }
+        )
     ).to.be.revertedWithCustomError(market, "InvalidDuration");
 
     await expect(
       market
         .connect(seller)
-        .createAuction(await nft.getAddress(), 1n, 31 * 24 * 60 * 60, ethers.parseEther("1"), false, {
-          value: ethers.parseEther("1")
-        })
+        ["createAuction(address,uint256,uint256,uint256,bool)"](
+          await nft.getAddress(),
+          1n,
+          31 * 24 * 60 * 60,
+          ethers.parseEther("1"),
+          false,
+          {
+            value: ethers.parseEther("1")
+          }
+        )
     ).to.be.revertedWithCustomError(market, "InvalidDuration");
+  });
+
+  it("rejects opening bids that exceed the current confidential bid encoding range", async function () {
+    const { market, nft, seller } = await loadFixture(deployFixture);
+
+    await nft.connect(seller).mint(seller.address);
+    await nft.connect(seller).approve(await market.getAddress(), 1n);
+
+    await expect(
+      market
+        .connect(seller)
+        ["createAuction(address,uint256,uint256,uint256,uint256,bool)"](
+          await nft.getAddress(),
+          1n,
+          24 * 60 * 60,
+          4_294_967_296n,
+          ethers.parseEther("1"),
+          false,
+          {
+            value: ethers.parseEther("1")
+          }
+        )
+    ).to.be.revertedWithCustomError(market, "InvalidStartingPrice");
   });
 
   it("rejects auction creation with zero or mismatched seller deposits", async function () {
@@ -114,13 +197,26 @@ describe("FhenixFairMarket Phase 1", function () {
     await nft.connect(seller).approve(await market.getAddress(), 1n);
 
     await expect(
-      market.connect(seller).createAuction(await nft.getAddress(), 1n, 24 * 60 * 60, 0n, false, { value: 0n })
+      market
+        .connect(seller)
+        ["createAuction(address,uint256,uint256,uint256,bool)"](await nft.getAddress(), 1n, 24 * 60 * 60, 0n, false, {
+          value: 0n
+        })
     ).to.be.revertedWithCustomError(market, "IncorrectSellerDeposit");
 
     await expect(
-      market.connect(seller).createAuction(await nft.getAddress(), 1n, 24 * 60 * 60, ethers.parseEther("2"), false, {
-        value: ethers.parseEther("1")
-      })
+      market
+        .connect(seller)
+        ["createAuction(address,uint256,uint256,uint256,bool)"](
+          await nft.getAddress(),
+          1n,
+          24 * 60 * 60,
+          ethers.parseEther("2"),
+          false,
+          {
+            value: ethers.parseEther("1")
+          }
+        )
     ).to.be.revertedWithCustomError(market, "IncorrectSellerDeposit");
   });
 
@@ -132,9 +228,16 @@ describe("FhenixFairMarket Phase 1", function () {
     await expect(
       market
         .connect(seller)
-        .createAuction(await nft.getAddress(), 1n, 24 * 60 * 60, ethers.parseEther("1"), false, {
-          value: ethers.parseEther("1")
-        })
+        ["createAuction(address,uint256,uint256,uint256,bool)"](
+          await nft.getAddress(),
+          1n,
+          24 * 60 * 60,
+          ethers.parseEther("1"),
+          false,
+          {
+            value: ethers.parseEther("1")
+          }
+        )
     ).to.be.revertedWithCustomError(market, "NFTNotApproved");
   });
 
@@ -146,6 +249,37 @@ describe("FhenixFairMarket Phase 1", function () {
       .withArgs(1n, bidder.address, ethers.parseEther("2"));
 
     expect(await market.escrowBalances(1n, bidder.address)).to.equal(ethers.parseEther("2"));
+  });
+
+  it("rejects encrypted bids below the configured opening bid", async function () {
+    const { adapter, market, nft, seller, bidder } = await loadFixture(deployFixture);
+
+    await nft.connect(seller).mint(seller.address);
+    await nft.connect(seller).approve(await market.getAddress(), 1n);
+    await market
+      .connect(seller)
+      ["createAuction(address,uint256,uint256,uint256,uint256,bool)"](
+        await nft.getAddress(),
+        1n,
+        24 * 60 * 60,
+        400n,
+        ethers.parseEther("1"),
+        true,
+        {
+          value: ethers.parseEther("1")
+        }
+      );
+
+    await market.connect(bidder).lockEscrow(1n, { value: 600n });
+
+    await expect(market.connect(bidder).placeBid(1n, await adapter.asEuint32(399))).to.be.revertedWithCustomError(
+      market,
+      "BidBelowStartingPrice"
+    );
+
+    await expect(market.connect(bidder).placeBid(1n, await adapter.asEuint32(400)))
+      .to.emit(market, "BidPlaced")
+      .withArgs(1n, bidder.address, await adapter.asEuint32(400));
   });
 
   it("rejects escrow on missing auctions, zero-value deposits, and expired auctions", async function () {

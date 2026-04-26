@@ -23,6 +23,7 @@ const MARKET_ABI = [
   "event AuctionCreated(uint256 indexed auctionId, address indexed seller, address indexed nftContract, uint256 tokenId, uint256 endTime, uint256 sellerDeposit, bool isVickrey)",
   "function auctionCounter() view returns (uint256)",
   "function getAuction(uint256 auctionId) view returns (address nftContract, uint256 tokenId, address seller, uint64 endTime, uint256 sellerDeposit, uint8 state, bool isVickrey, uint64 lastBlockTimestamp, bytes32 winnerCiphertext, uint256 winningAmount)",
+  "function getAuctionStartingPrice(uint256 auctionId) view returns (uint256)",
   "function getResolutionRequest(uint256 auctionId) view returns (bytes32 requestId, bytes32 winnerHandle, bytes32 amountHandle, uint64 requestedAt)",
   "function getBidders(uint256 auctionId) view returns (address[])",
   "function getEncryptedBid(uint256 auctionId, address bidder) view returns (bytes32)",
@@ -376,6 +377,7 @@ class StoreBackedDispatchQueue implements BatchDispatchQueue {
       requestId: job.requestId,
       winnerHandle: job.winnerHandle,
       amountHandle: job.amountHandle,
+      startingPrice: job.startingPrice,
       bids: job.bids.map((bid) => ({ ...bid })),
       enqueuedAtMs: Date.now()
     });
@@ -405,6 +407,7 @@ function toDispatchJob(job: StoredDispatchJob): CoFheDispatchJob {
     requestId: job.requestId,
     winnerHandle: job.winnerHandle,
     amountHandle: job.amountHandle,
+    startingPrice: job.startingPrice,
     bids: job.bids.map((bid) => ({ ...bid }))
   };
 }
@@ -452,11 +455,13 @@ async function enqueuePendingResolutionJobs(
     }
 
     const bids = await collectEncryptedBidsFromChain(marketContract, auction.auctionId);
+    const startingPrice = BigInt((await marketContract.getAuctionStartingPrice(auction.auctionId)).toString());
     await store.enqueueDispatchJob({
       auctionId: auction.auctionId,
       requestId: request.requestId,
       winnerHandle: request.winnerHandle,
       amountHandle: request.amountHandle,
+      startingPrice,
       bids,
       enqueuedAtMs: Date.now()
     });

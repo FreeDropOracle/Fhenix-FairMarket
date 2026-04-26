@@ -13,4 +13,7 @@ packages/*/cache/
 packages/*/typechain-types/
 packages/*/deployments/
 packages/*/dist/
+packages/*/.next/
 packages/keeper/state/*.json
+packages/frontend/playwright-report/
+packages/frontend/test-results/

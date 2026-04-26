@@ -12,6 +12,10 @@
     "test:integration": "pnpm --filter contracts test:integration",
     "coverage": "pnpm --filter contracts coverage",
     "build:keeper": "pnpm --filter keeper build",
-    "test:keeper": "pnpm --filter keeper test"
+    "test:keeper": "pnpm --filter keeper test",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "build:frontend": "pnpm --filter frontend build",
+    "test:e2e:frontend": "pnpm --filter frontend test:e2e",
+    "check:frontend": "pnpm --filter frontend build && pnpm --filter frontend test:e2e"
   }
 }

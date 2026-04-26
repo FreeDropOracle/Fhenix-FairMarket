@@ -31,6 +31,7 @@ export async function buildPhase3ResolutionProof(
     getAddress(): Promise<string>;
     getResolutionRequest(auctionId: bigint): Promise<readonly [string, string, string, bigint]>;
     getAuction(auctionId: bigint): Promise<readonly unknown[]>;
+    getAuctionStartingPrice(auctionId: bigint): Promise<bigint>;
   },
   avs: {
     computeDigest(
@@ -54,6 +55,7 @@ export async function buildPhase3ResolutionProof(
     requestId: request.requestId,
     winnerHandle: request.winnerHandle,
     amountHandle: request.amountHandle,
+    startingPrice: await market.getAuctionStartingPrice(auctionId),
     bids: bidders
   });
 

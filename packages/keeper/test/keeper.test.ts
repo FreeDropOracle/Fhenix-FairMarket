@@ -206,6 +206,14 @@ async function main(): Promise<void> {
     assert.equal((await queue.getCompleted("request-12"))?.winnerCiphertext, encodeEncryptedUint32(111n));
   });
 
+  await runCase("cofhe dispatcher respects the public opening bid and can yield a no-winner result", async () => {
+    const dispatcher = new CofheDispatcher(new InMemoryDispatchQueue(), () => 2_000);
+
+    const resolution = await dispatcher.dispatch(buildJob(77n, "request-opening-floor", 450n, 500n));
+    assert.equal(resolution.winner, null);
+    assert.equal(resolution.winningAmount, 0n);
+  });
+
   await runCase("avs submitter aggregates signatures, validates fraud proofs, and writes symbolic slashing logs", async () => {
     const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "ffm-keeper-"));
     const slashingLogPath = path.join(tempDirectory, "slashing.json");
@@ -268,12 +276,13 @@ async function runCase(name: string, fn: () => Promise<void>): Promise<void> {
   }
 }
 
-function buildJob(auctionId: bigint, requestId: string, amount: bigint): CoFheDispatchJob {
+function buildJob(auctionId: bigint, requestId: string, amount: bigint, startingPrice: bigint = 0n): CoFheDispatchJob {
   return {
     auctionId,
     requestId,
     winnerHandle: `winner-${requestId}`,
     amountHandle: `amount-${requestId}`,
+    startingPrice,
     bids: [
       {
         bidder: "0x00000000000000000000000000000000000000aa",

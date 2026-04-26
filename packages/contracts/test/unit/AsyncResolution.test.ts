@@ -109,6 +109,47 @@ describe("Phase 2 async resolution and settlement", function () {
     ).to.be.revertedWithCustomError(market, "ZeroWinningAmount");
   });
 
+  it("rejects winner resolutions that settle below the public opening bid", async function () {
+    const { adapter, avs, avsOperatorOne, avsOperatorTwo, bidder, market, nft, owner, seller } =
+      await loadFixture(createPhase2AuctionFixture);
+
+    await nft.connect(seller).mint(seller.address);
+    await nft.connect(seller).approve(await market.getAddress(), 2n);
+    await market
+      .connect(seller)
+      ["createAuction(address,uint256,uint256,uint256,uint256,bool)"](
+        await nft.getAddress(),
+        2n,
+        24 * 60 * 60,
+        400n,
+        ethers.parseEther("1"),
+        true,
+        { value: ethers.parseEther("1") }
+      );
+
+    await market.connect(bidder).lockEscrow(2n, { value: 600n });
+    const winnerBid = await adapter.asEuint32(450);
+    await market.connect(bidder).placeBid(2n, winnerBid);
+
+    await time.increase(24 * 60 * 60 + 1);
+    await market.triggerFinalize(2n);
+
+    const request = await market.getResolutionRequest(2n);
+    const digest = await avs.computeDigest(await market.getAddress(), 2n, request[0], bidder.address, winnerBid, 350n);
+    const signatureOne = await avsOperatorOne.signMessage(ethers.getBytes(digest));
+    const signatureTwo = await avsOperatorTwo.signMessage(ethers.getBytes(digest));
+    const proof = ethers.AbiCoder.defaultAbiCoder().encode(
+      [
+        "tuple(uint256 auctionId, bytes32 requestId, address winner, bytes32 winnerCiphertext, uint256 winningAmount, address[] operators, bytes[] signatures)"
+      ],
+      [[2n, request[0], bidder.address, winnerBid, 350n, [avsOperatorOne.address, avsOperatorTwo.address], [signatureOne, signatureTwo]]]
+    );
+
+    await expect(
+      market.connect(owner)["submitResolution(uint256,address,bytes32,uint256,bytes)"](2n, bidder.address, winnerBid, 350n, proof)
+    ).to.be.revertedWithCustomError(market, "WinningAmountBelowStartingPrice");
+  });
+
   it("keeps the auction in resolving and slashes attesters when the submitted resolution payload is tampered with", async function () {
     const { adapter, avs, avsOperatorOne, avsOperatorTwo, bidder, bidderTwo, market, owner } =
       await loadFixture(createPhase2AuctionFixture);
@@ -178,9 +219,18 @@ describe("Phase 2 async resolution and settlement", function () {
 
     await nft.connect(seller).mint(seller.address);
     await nft.connect(seller).approve(await secondMarket.getAddress(), 2n);
-    await secondMarket.connect(seller).createAuction(await nft.getAddress(), 2n, 24 * 60 * 60, ethers.parseEther("1"), true, {
-      value: ethers.parseEther("1")
-    });
+    await secondMarket
+      .connect(seller)
+      ["createAuction(address,uint256,uint256,uint256,bool)"](
+        await nft.getAddress(),
+        2n,
+        24 * 60 * 60,
+        ethers.parseEther("1"),
+        true,
+        {
+          value: ethers.parseEther("1")
+        }
+      );
 
     await secondMarket.connect(bidder).lockEscrow(1n, { value: 600n });
     await secondMarket.connect(bidder).placeBid(1n, winnerBid);

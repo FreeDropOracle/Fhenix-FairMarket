@@ -60,9 +60,9 @@ contract SettlementEngine is Ownable, ISettlementEngine {
         }
 
         uint256 boundedElapsed = elapsed > duration ? duration : elapsed;
-        uint256 progressBps = (boundedElapsed * BPS_DENOMINATOR) / duration;
-        uint256 slashBps = MIN_CANCELLATION_SLASH_BPS +
-            ((progressBps * (BPS_DENOMINATOR - MIN_CANCELLATION_SLASH_BPS)) / BPS_DENOMINATOR);
+        uint256 variableSlashBps =
+            (boundedElapsed * (BPS_DENOMINATOR - MIN_CANCELLATION_SLASH_BPS)) / duration;
+        uint256 slashBps = MIN_CANCELLATION_SLASH_BPS + variableSlashBps;
 
         return (sellerDeposit * slashBps) / BPS_DENOMINATOR;
     }

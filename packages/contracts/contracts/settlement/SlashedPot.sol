@@ -3,9 +3,10 @@ pragma solidity ^0.8.25;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+import "../interfaces/ISlashedPot.sol";
 import "../interfaces/ISettlementEngine.sol";
 
-contract SlashedPot is Ownable {
+contract SlashedPot is Ownable, ISlashedPot {
     struct Pot {
         bool exists;
         uint256 totalEscrow;
@@ -52,7 +53,7 @@ contract SlashedPot is Ownable {
         emit MarketUpdated(previousMarket, newMarket);
     }
 
-    function registerSlash(uint256 auctionId, uint256 totalEscrow) external payable onlyMarket {
+    function registerSlash(uint256 auctionId, uint256 totalEscrow) external payable override onlyMarket {
         Pot storage pot = _pots[auctionId];
         if (!pot.exists) {
             pot.exists = true;
@@ -63,13 +64,14 @@ contract SlashedPot is Ownable {
         emit SlashRegistered(auctionId, pot.totalEscrow, pot.totalSlash);
     }
 
-    function previewClaim(uint256 auctionId, uint256 escrowContribution) public view returns (uint256) {
+    function previewClaim(uint256 auctionId, uint256 escrowContribution) public view override returns (uint256) {
         Pot storage pot = _pots[auctionId];
         return settlementEngine.computeProRataShare(escrowContribution, pot.totalEscrow, pot.totalSlash);
     }
 
     function claimFor(uint256 auctionId, address recipient, uint256 escrowContribution)
         external
+        override
         onlyMarket
         returns (uint256 amount)
     {
@@ -84,6 +86,7 @@ contract SlashedPot is Ownable {
             return 0;
         }
 
+        // slither-disable-next-line low-level-calls
         (bool success,) = payable(recipient).call{value: amount}("");
         if (!success) {
             revert NativeTransferFailed(recipient, amount);

@@ -1,22 +1,10 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-
 import { ethers, network } from "hardhat";
 
-async function readDeploymentFile(targetFile: string): Promise<Record<string, string>> {
-  try {
-    const raw = await readFile(targetFile, "utf8");
-    return JSON.parse(raw) as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
+import { readDeploymentFile, resolveDeploymentPaths, resolveNetworkDescriptor, writeJsonFile } from "./utils";
 
 async function main() {
-  const deploymentDirectory = path.join(__dirname, "..", "deployments");
-  const deploymentFile = path.join(deploymentDirectory, `${network.name}.json`);
-
-  await mkdir(deploymentDirectory, { recursive: true });
+  const { deploymentFile } = resolveDeploymentPaths(network.name);
+  const descriptor = await resolveNetworkDescriptor(network.name);
 
   const existing = await readDeploymentFile(deploymentFile);
   let adapterAddress = process.env.PHASE1_ADAPTER_ADDRESS || existing.adapter;
@@ -36,6 +24,8 @@ async function main() {
 
   const [defaultSigner] = await ethers.getSigners();
   const initialOwner = process.env.PHASE1_INITIAL_OWNER || defaultSigner.address;
+  let avsOperators = existing.avsOperators;
+  let avsThreshold = existing.avsThreshold;
   let avsAddress = process.env.PHASE3_AVS || existing.avs;
   if (avsAddress) {
     const deployedCode = await ethers.provider.getCode(avsAddress);
@@ -64,6 +54,8 @@ async function main() {
     const avs = await avsFactory.deploy(initialOwner, [defaultSigner.address], 1);
     await avs.waitForDeployment();
     avsAddress = await avs.getAddress();
+    avsOperators = JSON.stringify([defaultSigner.address]);
+    avsThreshold = "1";
   }
 
   let slashedPot = process.env.PHASE1_SLASHED_POT || existing.slashedPot;
@@ -117,14 +109,21 @@ async function main() {
     ...existing,
     adapter: adapterAddress,
     avs: avsAddress,
+    ...(avsOperators ? { avsOperators } : {}),
+    ...(avsThreshold ? { avsThreshold } : {}),
+    chainId: descriptor.chainId.toString(),
+    deployer: defaultSigner.address,
+    deployedAt: new Date().toISOString(),
     settlementEngine: settlementEngineAddress,
     implementation: await implementation.getAddress(),
+    network: descriptor.name,
     proxy: await proxy.getAddress(),
+    proxyInitData: initData,
     initialOwner,
     slashedPot
   };
 
-  await writeFile(deploymentFile, `${JSON.stringify(nextPayload, null, 2)}\n`, "utf8");
+  await writeJsonFile(deploymentFile, nextPayload);
 
   console.log(`Implementation deployed to ${nextPayload.implementation}`);
   console.log(`Proxy deployed to ${nextPayload.proxy}`);

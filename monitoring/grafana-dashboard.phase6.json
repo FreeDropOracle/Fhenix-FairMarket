@@ -1,0 +1,125 @@
+{
+  "title": "Fhenix-FairMarket | Phase 6 Operations",
+  "uid": "fhenix-fairmarket-phase6",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Tracked Auctions",
+      "targets": [
+        {
+          "expr": "max(keeper_tracked_auctions)",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Resolving Auctions",
+      "targets": [
+        {
+          "expr": "max(keeper_resolving_auctions)",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Pending Dispatch Jobs",
+      "targets": [
+        {
+          "expr": "max(keeper_pending_dispatch_jobs)",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Slashing Violations",
+      "targets": [
+        {
+          "expr": "max(keeper_slashing_violations_total)",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Keeper Loop Health",
+      "targets": [
+        {
+          "expr": "keeper_last_loop_duration_ms",
+          "legendFormat": "{{role}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Dispatch vs Resolution Backlog",
+      "targets": [
+        {
+          "expr": "keeper_pending_dispatch_jobs",
+          "legendFormat": "dispatch {{role}}",
+          "refId": "A"
+        },
+        {
+          "expr": "keeper_pending_resolution_artifacts",
+          "legendFormat": "resolution {{role}}",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Average Resolution Submit Latency",
+      "targets": [
+        {
+          "expr": "keeper_average_resolution_submit_latency_ms{role=\"avs-submitter\"}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Successful vs Failed Requests",
+      "targets": [
+        {
+          "expr": "keeper_successful_requests",
+          "legendFormat": "successful {{role}}",
+          "refId": "A"
+        },
+        {
+          "expr": "keeper_failed_requests",
+          "legendFormat": "failed {{role}}",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 }
+    }
+  ]
+}

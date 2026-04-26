@@ -72,11 +72,13 @@ export interface AuctionStateStore {
   recordRaceCondition(record: RaceConditionRecord): Promise<void>;
   listRaceConditions(): Promise<RaceConditionRecord[]>;
   enqueueDispatchJob(job: StoredDispatchJob): Promise<void>;
+  listDispatchJobs(): Promise<StoredDispatchJob[]>;
   hasPendingDispatchJob(requestId: string): Promise<boolean>;
   listPendingDispatchJobs(limit: number): Promise<StoredDispatchJob[]>;
   markDispatchJobCompleted(requestId: string, dispatchedAtMs: number): Promise<void>;
   storeResolutionArtifact(artifact: StoredResolutionArtifact): Promise<void>;
   getResolutionArtifact(requestId: string): Promise<StoredResolutionArtifact | undefined>;
+  listResolutionArtifacts(): Promise<StoredResolutionArtifact[]>;
   listPendingResolutionArtifacts(limit: number): Promise<StoredResolutionArtifact[]>;
   markResolutionArtifactSubmitted(requestId: string, submittedAtMs: number): Promise<void>;
 }
@@ -165,6 +167,10 @@ export class InMemoryAuctionStateStore implements AuctionStateStore {
     return job !== undefined && job.dispatchedAtMs === undefined;
   }
 
+  async listDispatchJobs(): Promise<StoredDispatchJob[]> {
+    return Array.from(this.dispatchJobs.values()).map(cloneDispatchJob);
+  }
+
   async listPendingDispatchJobs(limit: number): Promise<StoredDispatchJob[]> {
     return Array.from(this.dispatchJobs.values())
       .filter((job) => job.dispatchedAtMs === undefined)
@@ -192,6 +198,10 @@ export class InMemoryAuctionStateStore implements AuctionStateStore {
   async getResolutionArtifact(requestId: string): Promise<StoredResolutionArtifact | undefined> {
     const artifact = this.resolutions.get(requestId);
     return artifact ? { ...artifact } : undefined;
+  }
+
+  async listResolutionArtifacts(): Promise<StoredResolutionArtifact[]> {
+    return Array.from(this.resolutions.values()).map((artifact) => ({ ...artifact }));
   }
 
   async listPendingResolutionArtifacts(limit: number): Promise<StoredResolutionArtifact[]> {

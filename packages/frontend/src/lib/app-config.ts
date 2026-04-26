@@ -22,11 +22,13 @@ export const appConfig = {
     marketProxyAddress: readEnv("NEXT_PUBLIC_MARKET_PROXY_ADDRESS"),
     settlementEngineAddress: readEnv("NEXT_PUBLIC_SETTLEMENT_ENGINE_ADDRESS"),
     slashedPotAddress: readEnv("NEXT_PUBLIC_SLASHED_POT_ADDRESS"),
+    avsAddress: readEnv("NEXT_PUBLIC_AVS_ADDRESS"),
     get ready() {
       return (
         isAddressLike(this.marketProxyAddress) &&
         isAddressLike(this.settlementEngineAddress) &&
-        isAddressLike(this.slashedPotAddress)
+        isAddressLike(this.slashedPotAddress) &&
+        isAddressLike(this.avsAddress)
       );
     }
   }

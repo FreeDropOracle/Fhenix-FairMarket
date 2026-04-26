@@ -11,6 +11,7 @@ import {
   CofheDispatcher,
   HttpFheosBatchClient,
   LocalCofheBatchClient,
+  type DispatchMetricsSnapshot,
   type BatchDispatchQueue,
   type CoFheDispatchJob,
   type CoFheResolution
@@ -36,28 +37,61 @@ const AVS_ABI = [
   "function computeDigest(address market, uint256 auctionId, bytes32 requestId, address winner, bytes32 winnerCiphertext, uint256 winningAmount) view returns (bytes32)"
 ];
 
+type RuntimeMetrics = {
+  activeAuctions: number;
+  averageDispatchLatencyMs: number;
+  averageResolutionSubmitLatencyMs: number;
+  failedBatches: number;
+  failedRequests: number;
+  finalizedAuctions: number;
+  lastError: string;
+  lastErrorAt: number;
+  lastLoopDurationMs: number;
+  lastResolutionSubmissionAt: number;
+  lastSuccessAt: number;
+  loopRuns: number;
+  pendingDispatchJobs: number;
+  pendingResolutionArtifacts: number;
+  resolvingAuctions: number;
+  slashingViolations: number;
+  submittedResolutionArtifacts: number;
+  successfulBatches: number;
+  successfulRequests: number;
+  trackedAuctions: number;
+  voidedAuctions: number;
+};
+
 async function main(): Promise<void> {
   const config = createKeeperConfigFromEnv();
   const role = (process.argv[2] ?? process.env.KEEPER_ROLE ?? "auction-monitor").toLowerCase();
-  const metrics = {
-    loopRuns: 0,
+  const metrics: RuntimeMetrics = {
+    activeAuctions: 0,
+    averageDispatchLatencyMs: 0,
+    averageResolutionSubmitLatencyMs: 0,
+    failedBatches: 0,
+    failedRequests: 0,
+    finalizedAuctions: 0,
+    lastError: "",
+    lastErrorAt: 0,
+    lastLoopDurationMs: 0,
+    lastResolutionSubmissionAt: 0,
     lastSuccessAt: 0,
-    lastError: ""
+    loopRuns: 0,
+    pendingDispatchJobs: 0,
+    pendingResolutionArtifacts: 0,
+    resolvingAuctions: 0,
+    slashingViolations: 0,
+    submittedResolutionArtifacts: 0,
+    successfulBatches: 0,
+    successfulRequests: 0,
+    trackedAuctions: 0,
+    voidedAuctions: 0
   };
 
   const server = createServer((request, response) => {
     if (request.url === "/metrics") {
       response.writeHead(200, { "content-type": "text/plain; version=0.0.4" });
-      response.end(
-        [
-          "# HELP keeper_loop_runs Total service loop executions",
-          "# TYPE keeper_loop_runs counter",
-          `keeper_loop_runs{role="${role}"} ${metrics.loopRuns}`,
-          "# HELP keeper_last_success_at Unix milliseconds of the last successful loop",
-          "# TYPE keeper_last_success_at gauge",
-          `keeper_last_success_at{role="${role}"} ${metrics.lastSuccessAt}`
-        ].join("\n")
-      );
+      response.end(renderPrometheusMetrics(role, metrics));
       return;
     }
 
@@ -66,9 +100,7 @@ async function main(): Promise<void> {
       JSON.stringify({
         role,
         ok: true,
-        loopRuns: metrics.loopRuns,
-        lastSuccessAt: metrics.lastSuccessAt,
-        lastError: metrics.lastError
+        metrics
       })
     );
   });
@@ -97,10 +129,11 @@ async function main(): Promise<void> {
 
 async function startAuctionMonitor(
   config: ReturnType<typeof createKeeperConfigFromEnv>,
-  metrics: { loopRuns: number; lastSuccessAt: number; lastError: string }
+  metrics: RuntimeMetrics
 ): Promise<void> {
   const store = new FileBackedAuctionStateStore(config.stateFilePath);
   await store.hydrate();
+  applyStoreSnapshot(metrics, await buildStoreMetricsSnapshot(store));
 
   const lockCoordinator =
     config.redisUrl.trim() === "" ? new InMemoryLockCoordinator() : new RedisLockCoordinator(config.redisUrl);
@@ -108,8 +141,10 @@ async function startAuctionMonitor(
   if (config.marketAddress.trim() === "") {
     console.log("[keeper] auction-monitor started in dry-run mode because KEEPER_MARKET_ADDRESS is empty");
     setInterval(() => {
+      const startedAt = Date.now();
       metrics.loopRuns += 1;
       metrics.lastSuccessAt = Date.now();
+      metrics.lastLoopDurationMs = Date.now() - startedAt;
     }, config.pollIntervalMs);
     return;
   }
@@ -159,6 +194,7 @@ async function startAuctionMonitor(
   await enqueuePendingResolutionJobs(readContract, monitor, store);
 
   setInterval(async () => {
+    const startedAt = Date.now();
     metrics.loopRuns += 1;
     try {
       await synchronizeAuctionsFromChain(readContract, monitor, store);
@@ -166,8 +202,11 @@ async function startAuctionMonitor(
       await synchronizeAuctionsFromChain(readContract, monitor, store);
       await enqueuePendingResolutionJobs(readContract, monitor, store);
 
+      applyStoreSnapshot(metrics, await buildStoreMetricsSnapshot(store));
+      metrics.lastLoopDurationMs = Date.now() - startedAt;
       metrics.lastSuccessAt = Date.now();
       metrics.lastError = "";
+      metrics.lastErrorAt = 0;
 
       for (const result of results) {
         console.log(
@@ -175,7 +214,9 @@ async function startAuctionMonitor(
         );
       }
     } catch (error) {
+      metrics.lastLoopDurationMs = Date.now() - startedAt;
       metrics.lastError = error instanceof Error ? error.message : String(error);
+      metrics.lastErrorAt = Date.now();
       console.error("[keeper] auction-monitor loop failed", error);
     }
   }, config.pollIntervalMs);
@@ -183,10 +224,11 @@ async function startAuctionMonitor(
 
 async function startDispatcher(
   config: ReturnType<typeof createKeeperConfigFromEnv>,
-  metrics: { loopRuns: number; lastSuccessAt: number; lastError: string }
+  metrics: RuntimeMetrics
 ): Promise<void> {
   const store = new FileBackedAuctionStateStore(config.stateFilePath);
   await store.hydrate();
+  applyStoreSnapshot(metrics, await buildStoreMetricsSnapshot(store));
 
   const queue = new StoreBackedDispatchQueue(store);
   const client =
@@ -198,6 +240,7 @@ async function startDispatcher(
   console.log(`[keeper] cofhe-dispatcher ready for batches up to ${config.maxBatchSize} auctions`);
 
   setInterval(async () => {
+    const startedAt = Date.now();
     metrics.loopRuns += 1;
     try {
       await store.hydrate();
@@ -216,14 +259,21 @@ async function startDispatcher(
         });
       }
 
+      applyStoreSnapshot(metrics, await buildStoreMetricsSnapshot(store));
+      applyDispatchSnapshot(metrics, dispatcher.getMetricsSnapshot());
+      metrics.lastLoopDurationMs = Date.now() - startedAt;
       metrics.lastSuccessAt = Date.now();
       metrics.lastError = "";
+      metrics.lastErrorAt = 0;
 
       if (results.length > 0) {
         console.log(`[keeper] dispatched ${results.length} queued CoFHE requests`);
       }
     } catch (error) {
+      applyDispatchSnapshot(metrics, dispatcher.getMetricsSnapshot());
+      metrics.lastLoopDurationMs = Date.now() - startedAt;
       metrics.lastError = error instanceof Error ? error.message : String(error);
+      metrics.lastErrorAt = Date.now();
       console.error("[keeper] cofhe-dispatcher loop failed", error);
     }
   }, config.pollIntervalMs);
@@ -231,13 +281,15 @@ async function startDispatcher(
 
 async function startAvsSubmitter(
   config: ReturnType<typeof createKeeperConfigFromEnv>,
-  metrics: { loopRuns: number; lastSuccessAt: number; lastError: string }
+  metrics: RuntimeMetrics
 ): Promise<void> {
   const store = new FileBackedAuctionStateStore(config.stateFilePath);
   await store.hydrate();
 
   const slashingLogStore = new JsonSlashingLogStore(config.slashingLogPath);
   await slashingLogStore.hydrate();
+  applyStoreSnapshot(metrics, await buildStoreMetricsSnapshot(store));
+  metrics.slashingViolations = (await slashingLogStore.list()).length;
   const submitter = new AvsSubmitter(config.avsThreshold, slashingLogStore);
 
   console.log(`[keeper] avs-submitter ready with threshold ${config.avsThreshold}`);
@@ -273,6 +325,7 @@ async function startAvsSubmitter(
   }
 
   setInterval(async () => {
+    const startedAt = Date.now();
     metrics.loopRuns += 1;
     try {
       await store.hydrate();
@@ -300,6 +353,7 @@ async function startAvsSubmitter(
 
             const proof = await submitter.submitVerifiedResolution(payload, payload, digest, operatorSigners, writer);
             await store.markResolutionArtifactSubmitted(artifact.requestId, Date.now());
+            metrics.lastResolutionSubmissionAt = Date.now();
             console.log(
               `[keeper] submitted resolution ${artifact.requestId} for auction ${artifact.auctionId.toString()} with ${proof.signerCount} AVS signatures`
             );
@@ -311,11 +365,18 @@ async function startAvsSubmitter(
         }
       }
 
+      applyStoreSnapshot(metrics, await buildStoreMetricsSnapshot(store));
+      metrics.slashingViolations = (await slashingLogStore.list()).length;
+      metrics.lastLoopDurationMs = Date.now() - startedAt;
       metrics.lastSuccessAt = Date.now();
       metrics.lastError = "";
+      metrics.lastErrorAt = 0;
       console.log(`[keeper] avs-submitter heartbeat, pending-artifacts=${pendingArtifacts.length}`);
     } catch (error) {
+      metrics.slashingViolations = (await slashingLogStore.list()).length;
+      metrics.lastLoopDurationMs = Date.now() - startedAt;
       metrics.lastError = error instanceof Error ? error.message : String(error);
+      metrics.lastErrorAt = Date.now();
       console.error("[keeper] avs-submitter loop failed", error);
     }
   }, config.pollIntervalMs);
@@ -497,6 +558,156 @@ function isValidPrivateKey(rawPrivateKey: string | undefined): rawPrivateKey is 
 
 function normalizeWinnerAddress(winner: string | null): string {
   return winner === null || winner.trim() === "" ? ZeroAddress : winner;
+}
+
+async function buildStoreMetricsSnapshot(store: AuctionStateStore): Promise<{
+  activeAuctions: number;
+  averageResolutionSubmitLatencyMs: number;
+  finalizedAuctions: number;
+  lastResolutionSubmissionAt: number;
+  pendingDispatchJobs: number;
+  pendingResolutionArtifacts: number;
+  resolvingAuctions: number;
+  submittedResolutionArtifacts: number;
+  trackedAuctions: number;
+  voidedAuctions: number;
+}> {
+  const [auctions, dispatchJobs, resolutions] = await Promise.all([
+    store.listAuctions(),
+    store.listDispatchJobs(),
+    store.listResolutionArtifacts()
+  ]);
+
+  let activeAuctions = 0;
+  let resolvingAuctions = 0;
+  let finalizedAuctions = 0;
+  let voidedAuctions = 0;
+
+  for (const auction of auctions) {
+    if (auction.state === 1n) {
+      activeAuctions += 1;
+    } else if (auction.state === 2n) {
+      resolvingAuctions += 1;
+    } else if (auction.state === 3n) {
+      finalizedAuctions += 1;
+    } else if (auction.state === 5n) {
+      voidedAuctions += 1;
+    }
+  }
+
+  const pendingDispatchJobs = dispatchJobs.filter((job) => job.dispatchedAtMs === undefined).length;
+  const pendingResolutionArtifacts = resolutions.filter((artifact) => artifact.submittedAtMs === undefined).length;
+  const submittedArtifacts = resolutions.filter((artifact) => artifact.submittedAtMs !== undefined);
+  const totalSubmitLatencyMs = submittedArtifacts.reduce(
+    (total, artifact) => total + ((artifact.submittedAtMs as number) - artifact.storedAtMs),
+    0
+  );
+
+  return {
+    activeAuctions,
+    averageResolutionSubmitLatencyMs:
+      submittedArtifacts.length === 0 ? 0 : totalSubmitLatencyMs / submittedArtifacts.length,
+    finalizedAuctions,
+    lastResolutionSubmissionAt: submittedArtifacts.reduce(
+      (latest, artifact) => Math.max(latest, artifact.submittedAtMs as number),
+      0
+    ),
+    pendingDispatchJobs,
+    pendingResolutionArtifacts,
+    resolvingAuctions,
+    submittedResolutionArtifacts: submittedArtifacts.length,
+    trackedAuctions: auctions.length,
+    voidedAuctions
+  };
+}
+
+function applyStoreSnapshot(
+  metrics: RuntimeMetrics,
+  snapshot: Awaited<ReturnType<typeof buildStoreMetricsSnapshot>>
+): void {
+  metrics.activeAuctions = snapshot.activeAuctions;
+  metrics.averageResolutionSubmitLatencyMs = snapshot.averageResolutionSubmitLatencyMs;
+  metrics.finalizedAuctions = snapshot.finalizedAuctions;
+  metrics.lastResolutionSubmissionAt = snapshot.lastResolutionSubmissionAt;
+  metrics.pendingDispatchJobs = snapshot.pendingDispatchJobs;
+  metrics.pendingResolutionArtifacts = snapshot.pendingResolutionArtifacts;
+  metrics.resolvingAuctions = snapshot.resolvingAuctions;
+  metrics.submittedResolutionArtifacts = snapshot.submittedResolutionArtifacts;
+  metrics.trackedAuctions = snapshot.trackedAuctions;
+  metrics.voidedAuctions = snapshot.voidedAuctions;
+}
+
+function applyDispatchSnapshot(metrics: RuntimeMetrics, snapshot: DispatchMetricsSnapshot): void {
+  metrics.averageDispatchLatencyMs = snapshot.averageLatencyMs;
+  metrics.failedBatches = snapshot.failedBatches;
+  metrics.failedRequests = snapshot.failedRequests;
+  metrics.successfulBatches = snapshot.successfulBatches;
+  metrics.successfulRequests = snapshot.successfulRequests;
+}
+
+function renderPrometheusMetrics(role: string, metrics: RuntimeMetrics): string {
+  return [
+    "# HELP keeper_loop_runs Total service loop executions",
+    "# TYPE keeper_loop_runs counter",
+    `keeper_loop_runs{role="${role}"} ${metrics.loopRuns}`,
+    "# HELP keeper_last_success_at Unix milliseconds of the last successful loop",
+    "# TYPE keeper_last_success_at gauge",
+    `keeper_last_success_at{role="${role}"} ${metrics.lastSuccessAt}`,
+    "# HELP keeper_last_error_at Unix milliseconds of the last recorded error",
+    "# TYPE keeper_last_error_at gauge",
+    `keeper_last_error_at{role="${role}"} ${metrics.lastErrorAt}`,
+    "# HELP keeper_last_loop_duration_ms Duration of the last loop execution in milliseconds",
+    "# TYPE keeper_last_loop_duration_ms gauge",
+    `keeper_last_loop_duration_ms{role="${role}"} ${metrics.lastLoopDurationMs}`,
+    "# HELP keeper_tracked_auctions Number of auctions tracked in keeper state",
+    "# TYPE keeper_tracked_auctions gauge",
+    `keeper_tracked_auctions{role="${role}"} ${metrics.trackedAuctions}`,
+    "# HELP keeper_active_auctions Number of active auctions in keeper state",
+    "# TYPE keeper_active_auctions gauge",
+    `keeper_active_auctions{role="${role}"} ${metrics.activeAuctions}`,
+    "# HELP keeper_resolving_auctions Number of resolving auctions awaiting settlement",
+    "# TYPE keeper_resolving_auctions gauge",
+    `keeper_resolving_auctions{role="${role}"} ${metrics.resolvingAuctions}`,
+    "# HELP keeper_finalized_auctions Number of finalized auctions recorded in keeper state",
+    "# TYPE keeper_finalized_auctions gauge",
+    `keeper_finalized_auctions{role="${role}"} ${metrics.finalizedAuctions}`,
+    "# HELP keeper_voided_auctions Number of voided auctions recorded in keeper state",
+    "# TYPE keeper_voided_auctions gauge",
+    `keeper_voided_auctions{role="${role}"} ${metrics.voidedAuctions}`,
+    "# HELP keeper_pending_dispatch_jobs Pending CoFHE dispatch jobs",
+    "# TYPE keeper_pending_dispatch_jobs gauge",
+    `keeper_pending_dispatch_jobs{role="${role}"} ${metrics.pendingDispatchJobs}`,
+    "# HELP keeper_pending_resolution_artifacts Pending AVS submission artifacts",
+    "# TYPE keeper_pending_resolution_artifacts gauge",
+    `keeper_pending_resolution_artifacts{role="${role}"} ${metrics.pendingResolutionArtifacts}`,
+    "# HELP keeper_submitted_resolution_artifacts Submitted resolution artifacts",
+    "# TYPE keeper_submitted_resolution_artifacts gauge",
+    `keeper_submitted_resolution_artifacts{role="${role}"} ${metrics.submittedResolutionArtifacts}`,
+    "# HELP keeper_average_dispatch_latency_ms Average CoFHE dispatch latency",
+    "# TYPE keeper_average_dispatch_latency_ms gauge",
+    `keeper_average_dispatch_latency_ms{role="${role}"} ${metrics.averageDispatchLatencyMs}`,
+    "# HELP keeper_average_resolution_submit_latency_ms Average AVS submission latency",
+    "# TYPE keeper_average_resolution_submit_latency_ms gauge",
+    `keeper_average_resolution_submit_latency_ms{role="${role}"} ${metrics.averageResolutionSubmitLatencyMs}`,
+    "# HELP keeper_last_resolution_submission_at Unix milliseconds of the most recent AVS submission",
+    "# TYPE keeper_last_resolution_submission_at gauge",
+    `keeper_last_resolution_submission_at{role="${role}"} ${metrics.lastResolutionSubmissionAt}`,
+    "# HELP keeper_successful_batches Total successful CoFHE batches",
+    "# TYPE keeper_successful_batches counter",
+    `keeper_successful_batches{role="${role}"} ${metrics.successfulBatches}`,
+    "# HELP keeper_failed_batches Total failed CoFHE batches",
+    "# TYPE keeper_failed_batches counter",
+    `keeper_failed_batches{role="${role}"} ${metrics.failedBatches}`,
+    "# HELP keeper_successful_requests Total successful encrypted resolution requests",
+    "# TYPE keeper_successful_requests counter",
+    `keeper_successful_requests{role="${role}"} ${metrics.successfulRequests}`,
+    "# HELP keeper_failed_requests Total failed encrypted resolution requests",
+    "# TYPE keeper_failed_requests counter",
+    `keeper_failed_requests{role="${role}"} ${metrics.failedRequests}`,
+    "# HELP keeper_slashing_violations_total Total recorded AVS slashing violations",
+    "# TYPE keeper_slashing_violations_total gauge",
+    `keeper_slashing_violations_total{role="${role}"} ${metrics.slashingViolations}`
+  ].join("\n");
 }
 
 main().catch((error) => {

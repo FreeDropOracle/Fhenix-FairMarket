@@ -6,6 +6,7 @@ import "solidity-coverage";
 import type { HardhatUserConfig } from "hardhat/config";
 
 const sharedAccounts = process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [];
+const sepoliaUrl = process.env.SEPOLIA_RPC_URL || process.env.FHENIX_TESTNET_RPC_URL;
 
 const config: HardhatUserConfig = {
   defaultNetwork: "hardhat",
@@ -27,10 +28,14 @@ const config: HardhatUserConfig = {
       url: process.env.RPC_URL || "http://127.0.0.1:8545",
       accounts: sharedAccounts
     },
-    ...(process.env.FHENIX_TESTNET_RPC_URL
+    ...(sepoliaUrl
       ? {
+          sepolia: {
+            url: sepoliaUrl,
+            accounts: sharedAccounts
+          },
           fhenixTestnet: {
-            url: process.env.FHENIX_TESTNET_RPC_URL,
+            url: sepoliaUrl,
             accounts: sharedAccounts
           }
         }
@@ -45,6 +50,11 @@ const config: HardhatUserConfig = {
   gasReporter: {
     enabled: process.env.REPORT_GAS === "true",
     currency: "USD"
+  },
+  etherscan: {
+    apiKey: {
+      sepolia: process.env.ETHERSCAN_API_KEY || ""
+    }
   },
   mocha: {
     timeout: 40000

@@ -61,6 +61,7 @@ services:
     profiles: ["observability"]
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
     ports:
       - "9090:9090"
     depends_on:

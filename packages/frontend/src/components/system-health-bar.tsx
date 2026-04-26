@@ -34,12 +34,12 @@ export function SystemHealthBar() {
     },
     {
       label: "Contracts",
-      value: appConfig.contracts.ready ? "Registry configured" : "Deployment values pending",
+      value: appConfig.contracts.ready ? "Proxy, engine, slashed pot, and AVS wired" : "Phase 6 deployment values pending",
       tone: appConfig.contracts.ready ? "success" : "warning"
     },
     {
       label: "Protocol posture",
-      value: "Phase 4 backend complete / Phase 5 shell active",
+      value: "Phase 5 product complete / Phase 6 testnet runway active",
       tone: "success"
     }
   ];

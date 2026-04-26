@@ -1,0 +1,56 @@
+groups:
+  - name: fhenix-fairmarket-keepers
+    rules:
+      - alert: KeeperServiceDown
+        expr: up{job="keeper-services"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Keeper service is down
+          description: One of the keeper roles is no longer reachable by Prometheus.
+
+      - alert: KeeperLoopStalled
+        expr: (time() * 1000) - keeper_last_success_at{role="auction-monitor"} > 300000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Auction monitor loop has stalled
+          description: The auction monitor has not recorded a successful loop for over 5 minutes.
+
+      - alert: DispatchBacklogGrowing
+        expr: keeper_pending_dispatch_jobs{role="cofhe-dispatcher"} > 25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Pending CoFHE jobs are accumulating
+          description: Dispatcher backlog crossed the expected steady-state ceiling.
+
+      - alert: ResolutionArtifactsStuck
+        expr: keeper_pending_resolution_artifacts{role="avs-submitter"} > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Resolution artifacts are waiting too long for AVS submission
+          description: Pending AVS submission artifacts exceeded the expected buffer.
+
+      - alert: SettlementLatencyHigh
+        expr: keeper_average_resolution_submit_latency_ms{role="avs-submitter"} > 300000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Average settlement submission latency is high
+          description: Average resolution submission latency is above 5 minutes.
+
+      - alert: SlashingViolationsDetected
+        expr: keeper_slashing_violations_total{role="avs-submitter"} > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: AVS slashing violations detected
+          description: The AVS submitter recorded at least one slashing violation and needs inspection.

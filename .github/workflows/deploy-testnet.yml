@@ -1,0 +1,81 @@
+name: Phase 6 Testnet Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: Target network
+        required: true
+        default: sepolia
+        type: choice
+        options:
+          - sepolia
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+      SEPOLIA_WS_URL: ${{ secrets.SEPOLIA_WS_URL }}
+      ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+      PHASE1_INITIAL_OWNER: ${{ secrets.PHASE1_INITIAL_OWNER }}
+      PHASE1_SLASHED_POT: ${{ secrets.PHASE1_SLASHED_POT }}
+      PHASE1_ADAPTER_ADDRESS: ${{ secrets.PHASE1_ADAPTER_ADDRESS }}
+      PHASE2_SETTLEMENT_ENGINE: ${{ secrets.PHASE2_SETTLEMENT_ENGINE }}
+      PHASE3_AVS: ${{ secrets.PHASE3_AVS }}
+      KEEPER_FHEOS_ENDPOINT: ${{ secrets.KEEPER_FHEOS_ENDPOINT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile contracts
+        run: pnpm --filter contracts compile
+
+      - name: Build keeper
+        run: pnpm --filter keeper build
+
+      - name: Build frontend
+        run: pnpm --filter frontend build
+
+      - name: Deploy adapters and settlement engine
+        run: pnpm --dir packages/contracts exec hardhat run deploy/00_deploy_adapters.ts --network ${{ inputs.network }}
+
+      - name: Deploy market proxy and wire dependencies
+        run: pnpm --dir packages/contracts exec hardhat run deploy/01_deploy_core_proxy.ts --network ${{ inputs.network }}
+
+      - name: Export runtime configuration
+        run: pnpm --dir packages/contracts exec hardhat run deploy/02_export_runtime_config.ts --network ${{ inputs.network }}
+
+      - name: Smoke test deployment
+        run: pnpm --dir packages/contracts exec hardhat run deploy/04_smoke_test.ts --network ${{ inputs.network }}
+
+      - name: Verify contracts on explorer
+        if: ${{ env.ETHERSCAN_API_KEY != '' }}
+        run: pnpm --dir packages/contracts exec hardhat run deploy/03_verify_deployment.ts --network ${{ inputs.network }}
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase6-${{ inputs.network }}-deployment
+          path: packages/contracts/deployments/

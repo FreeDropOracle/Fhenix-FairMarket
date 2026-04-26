@@ -61,14 +61,16 @@ describe("Phase 3 CoFHE and AVS integration flow", function () {
     const sellerPayout = await market.previewSellerPayout(1n);
     const bidderRefund = await market.previewRefund(1n, bidder.address);
     const bidderTwoRefund = await market.previewRefund(1n, bidderTwo.address);
+    const finalizeReward = (ethers.parseEther("1") * 20n) / 10_000n;
 
-    expect(sellerPayout).to.equal(ethers.parseEther("1") + 450n);
+    expect(sellerPayout).to.equal(ethers.parseEther("1") + 450n - finalizeReward);
     expect(bidderRefund[0]).to.equal(150n);
     expect(bidderTwoRefund[0]).to.equal(500n);
 
     await market.connect(bidderTwo).claimRefund(1n);
     await market.connect(bidder).claimRefund(1n);
     await market.connect(seller).claimSellerProceeds(1n);
+    await market.claimFinalizeReward(1n);
     await market.connect(bidder).claimAsset(1n);
 
     expect(await nft.ownerOf(1n)).to.equal(bidder.address);

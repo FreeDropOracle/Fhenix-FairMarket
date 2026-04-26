@@ -62,16 +62,18 @@ describe("Phase 2 async resolution and settlement", function () {
     const winnerPreview = await market.previewRefund(1n, bidder.address);
     const runnerUpPreview = await market.previewRefund(1n, bidderTwo.address);
     const sellerPreview = await market.previewSellerPayout(1n);
+    const finalizeReward = (ethers.parseEther("1") * 20n) / 10_000n;
 
     expect(winnerPreview[0]).to.equal(150n);
     expect(winnerPreview[1]).to.equal(0n);
     expect(runnerUpPreview[0]).to.equal(500n);
     expect(runnerUpPreview[1]).to.equal(0n);
-    expect(sellerPreview).to.equal(ethers.parseEther("1") + 450n);
+    expect(sellerPreview).to.equal(ethers.parseEther("1") + 450n - finalizeReward);
 
     await market.connect(bidderTwo).claimRefund(1n);
     await market.connect(bidder).claimRefund(1n);
     await market.connect(seller).claimSellerProceeds(1n);
+    await market.claimFinalizeReward(1n);
     await market.connect(bidder).claimAsset(1n);
 
     expect(await market.hasWithdrawn(1n, bidder.address)).to.equal(true);

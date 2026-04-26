@@ -19,7 +19,7 @@ describe("FhenixFairMarket Phase 1", function () {
     const { market, adapter, owner } = await loadFixture(deployFixture);
 
     await expect(market.initialize(await adapter.getAddress(), owner.address, ethers.ZeroAddress)).to.be.reverted;
-    expect(await market.contractVersion()).to.equal("phase3");
+    expect(await market.contractVersion()).to.equal("phase4");
   });
 
   it("rejects invalid initialization parameters on a fresh implementation", async function () {

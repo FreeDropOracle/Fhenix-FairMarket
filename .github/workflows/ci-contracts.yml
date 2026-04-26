@@ -1,0 +1,65 @@
+name: CI Contracts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/contracts/**"
+      - ".github/workflows/ci-contracts.yml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+  pull_request:
+    paths:
+      - "packages/contracts/**"
+      - ".github/workflows/ci-contracts.yml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compile contracts
+        run: pnpm --filter contracts compile
+
+      - name: Run unit and integration tests
+        run: pnpm --filter contracts test
+
+      - name: Run coverage
+        run: pnpm --filter contracts coverage
+
+      - name: Run gas reporter
+        run: REPORT_GAS=true pnpm --filter contracts test
+
+      - name: Run Slither
+        uses: crytic/slither-action@v0.4.0
+        with:
+          target: packages/contracts
+          node-version: 22
+          ignore-compile: true
+          slither-args: --exclude-dependencies --exclude timestamp,unindexed-event-address --filter-paths "node_modules|test|mocks|coverage|artifacts|cache"

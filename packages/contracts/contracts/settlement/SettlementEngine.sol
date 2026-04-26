@@ -60,9 +60,9 @@ contract SettlementEngine is Ownable, ISettlementEngine {
         }
 
         uint256 boundedElapsed = elapsed > duration ? duration : elapsed;
-        uint256 progressBps = (boundedElapsed * BPS_DENOMINATOR) / duration;
-        uint256 slashBps = MIN_CANCELLATION_SLASH_BPS +
-            ((progressBps * (BPS_DENOMINATOR - MIN_CANCELLATION_SLASH_BPS)) / BPS_DENOMINATOR);
+        uint256 variableSlashBps =
+            (boundedElapsed * (BPS_DENOMINATOR - MIN_CANCELLATION_SLASH_BPS)) / duration;
+        uint256 slashBps = MIN_CANCELLATION_SLASH_BPS + variableSlashBps;
 
         return (sellerDeposit * slashBps) / BPS_DENOMINATOR;
     }
@@ -110,13 +110,17 @@ contract SettlementEngine is Ownable, ISettlementEngine {
         address market,
         uint256 auctionId,
         uint32 bidCount,
-        uint64 endTime
+        uint64 endTime,
+        uint256 finalizeNonce,
+        bytes32 raceSalt
     ) external view override returns (ResolutionRequest memory) {
         if (market == address(0)) {
             revert ZeroAddress();
         }
 
-        bytes32 requestId = keccak256(abi.encode(address(this), block.chainid, market, auctionId, bidCount, endTime));
+        bytes32 requestId = keccak256(
+            abi.encode(address(this), block.chainid, market, auctionId, bidCount, endTime, finalizeNonce, raceSalt)
+        );
         return
             ResolutionRequest({
                 requestId: requestId,

@@ -1,0 +1,57 @@
+name: CI Keeper
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/keeper/**"
+      - ".github/workflows/ci-keeper.yml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+  pull_request:
+    paths:
+      - "packages/keeper/**"
+      - ".github/workflows/ci-keeper.yml"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "pnpm-workspace.yaml"
+
+jobs:
+  keeper:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build keeper package
+        run: pnpm --filter keeper build
+
+      - name: Run keeper tests
+        run: pnpm --filter keeper test
+
+      - name: Validate docker compose file
+        run: docker compose -f packages/keeper/docker-compose.yml config
+
+      - name: Build keeper image
+        run: docker build -f packages/keeper/Dockerfile .

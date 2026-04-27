@@ -1,6 +1,6 @@
 import type { StatusPillTone } from "@/components/status-pill";
 
-export type AuctionState = "active" | "resolving" | "finalized" | "voided";
+export type AuctionState = "active" | "resolving" | "finalized" | "cancelled" | "voided";
 export type AuctionStateFilter = "all" | AuctionState;
 export type AuctionSortKey = "ending" | "activity" | "escrow" | "newest";
 
@@ -39,6 +39,17 @@ export type AuctionRecord = {
   activityScore: number;
   escrowScore: number;
   freshnessScore: number;
+  onChain?: {
+    auctionId: number;
+    bidCount: number;
+    endTimeUnix: number;
+    nftContractAddress: string;
+    sellerClaimed: boolean;
+    sellerDepositWei: string;
+    sellerPayoutWei: string;
+    tokenId: string;
+    totalEscrowWei: string;
+  };
 };
 
 export const auctionStateOptions: Array<{
@@ -49,6 +60,7 @@ export const auctionStateOptions: Array<{
   { value: "active", label: "Active" },
   { value: "resolving", label: "Resolving" },
   { value: "finalized", label: "Finalized" },
+  { value: "cancelled", label: "Cancelled lots" },
   { value: "voided", label: "Voided" }
 ];
 
@@ -355,6 +367,8 @@ export function getAuctionStatusTone(state: AuctionState): StatusPillTone {
       return "success";
     case "resolving":
       return "warning";
+    case "cancelled":
+      return "warning";
     case "voided":
       return "danger";
     case "finalized":
@@ -369,6 +383,8 @@ export function getAuctionStatusLabel(state: AuctionState) {
       return "Active";
     case "resolving":
       return "Resolving";
+    case "cancelled":
+      return "Cancelled";
     case "voided":
       return "Voided";
     case "finalized":

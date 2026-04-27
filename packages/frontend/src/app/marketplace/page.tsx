@@ -7,11 +7,13 @@ import {
   auctionStateOptions,
   filterAuctions,
   getMarketplaceStats,
-  listAuctions,
   sortAuctions,
   type AuctionSortKey,
   type AuctionStateFilter
 } from "@/lib/auctions";
+import { listMarketplaceAuctions } from "@/lib/marketplace-data";
+
+export const dynamic = "force-dynamic";
 
 type MarketplacePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -56,7 +58,7 @@ export default async function MarketplacePage({ searchParams }: MarketplacePageP
   const params = (await searchParams) ?? {};
   const activeState = normalizeStateFilter(params.state);
   const activeSort = normalizeSortKey(params.sort);
-  const records = listAuctions();
+  const records = await listMarketplaceAuctions();
   const stats = getMarketplaceStats(records);
   const filtered = filterAuctions(records, activeState);
   const auctions = sortAuctions(filtered, activeSort);

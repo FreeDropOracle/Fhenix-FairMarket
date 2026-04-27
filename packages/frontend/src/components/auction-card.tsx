@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 
+import { AuctionCountdown } from "@/components/auction-countdown";
 import { StatusPill } from "@/components/status-pill";
 import { getAuctionStatusLabel, getAuctionStatusTone, type AuctionRecord } from "@/lib/auctions";
 
@@ -20,6 +21,9 @@ export function AuctionCard({ auction }: AuctionCardProps) {
     "--auction-beam": auction.visual.beam,
     "--auction-mist": auction.visual.mist
   };
+  const hasLiveCountdown = auction.state === "active" && Boolean(auction.onChain?.endTimeUnix);
+  const detailsHref = auction.onChain ? `/marketplace/${auction.id}#seller-controls` : `/marketplace/${auction.id}`;
+  const detailsLabel = auction.onChain ? "Seller controls" : "Open details";
 
   return (
     <article className="auction-card">
@@ -29,8 +33,15 @@ export function AuctionCard({ auction }: AuctionCardProps) {
           <StatusPill label={getAuctionStatusLabel(auction.state)} tone={getAuctionStatusTone(auction.state)} />
         </div>
         <div className="auction-card__crest">
+          {hasLiveCountdown ? <span className="auction-card__countdown-chip">Live countdown</span> : null}
           <span className="auction-card__lot">{auction.lotLabel}</span>
-          <strong className="auction-card__clock">{auction.timeLabel}</strong>
+          <strong className="auction-card__clock" data-live={hasLiveCountdown}>
+            <AuctionCountdown
+              endTimeUnix={auction.onChain?.endTimeUnix}
+              fallbackLabel={auction.timeLabel}
+              state={auction.state}
+            />
+          </strong>
         </div>
       </div>
 
@@ -60,8 +71,8 @@ export function AuctionCard({ auction }: AuctionCardProps) {
             <strong>{auction.escrowLabel}</strong>
           </div>
           <div className="auction-card__actions">
-            <Link className="secondary-action auction-card__action" href={`/marketplace/${auction.id}`}>
-              Open details
+            <Link className="secondary-action auction-card__action" href={detailsHref}>
+              {detailsLabel}
             </Link>
             <Link className="primary-action auction-card__action" href="/marketplace/create">
               Create auction

@@ -98,8 +98,8 @@ contract FhenixFairMarket is
     error ZeroAddress();
     error ZeroValue();
 
-    uint256 public constant MIN_AUCTION_DURATION = 1 hours;
-    uint256 public constant MAX_AUCTION_DURATION = 30 days;
+    uint256 public constant MIN_AUCTION_DURATION = 1 minutes;
+    uint256 public constant MAX_AUCTION_DURATION = 90 days;
     uint256 private constant _BPS_DENOMINATOR = 10_000;
     uint256 private constant _DEFAULT_DYNAMIC_TIMEOUT = 30 minutes;
     uint256 private constant _KEEPER_FINALIZE_REWARD_BPS = 20;

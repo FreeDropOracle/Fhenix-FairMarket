@@ -3,13 +3,15 @@ import { notFound } from "next/navigation";
 import type { CSSProperties } from "react";
 
 import { AuctionActionConsole } from "@/components/auction-action-console";
+import { SellerAuctionControls } from "@/components/seller-auction-controls";
 import { StatusPill } from "@/components/status-pill";
 import {
-  getAuctionById,
   getAuctionStatusLabel,
-  getAuctionStatusTone,
-  listAuctions
+  getAuctionStatusTone
 } from "@/lib/auctions";
+import { getMarketplaceAuctionById } from "@/lib/marketplace-data";
+
+export const dynamic = "force-dynamic";
 
 type AuctionDetailsPageProps = {
   params: Promise<{
@@ -17,15 +19,9 @@ type AuctionDetailsPageProps = {
   }>;
 };
 
-export function generateStaticParams() {
-  return listAuctions().map((auction) => ({
-    auctionId: auction.id
-  }));
-}
-
 export default async function AuctionDetailsPage({ params }: AuctionDetailsPageProps) {
   const { auctionId } = await params;
-  const auction = getAuctionById(auctionId);
+  const auction = await getMarketplaceAuctionById(auctionId);
 
   if (!auction) {
     notFound();
@@ -59,6 +55,11 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
           <p className="detail-copy">{auction.synopsis}</p>
           <p className="detail-callout">{auction.settlementNote}</p>
           <div className="hero-actions">
+            {auction.onChain ? (
+              <Link className="secondary-action" href="#seller-controls">
+                Seller controls
+              </Link>
+            ) : null}
             <Link className="primary-action" href="/marketplace/create">
               Create adjacent lot
             </Link>
@@ -75,9 +76,21 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
         auctionTitle={auction.title}
         confidentialityLabel={auction.confidentialityLabel}
         escrowLabel={auction.escrowLabel}
+        onChain={auction.onChain}
         openingBidAmount={auction.openingBidAmount}
         openingBidLabel={auction.openingBidLabel}
       />
+
+      {auction.onChain ? (
+        <section className="detail-grid">
+          <SellerAuctionControls
+            auctionId={auction.id}
+            auctionState={auction.state}
+            onChain={auction.onChain}
+            sellerAddress={auction.seller}
+          />
+        </section>
+      ) : null}
 
       <section className="detail-grid">
         <article className="detail-card">

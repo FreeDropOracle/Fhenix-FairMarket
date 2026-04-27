@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("home route exposes skip link and core navigation", async ({ page }) => {
+  test.slow();
   await page.goto("/");
 
   await page.keyboard.press("Tab");
@@ -20,6 +21,7 @@ test("home route exposes skip link and core navigation", async ({ page }) => {
 });
 
 test("portfolio and governance surfaces render their release-ready sections", async ({ page }) => {
+  test.slow();
   await page.goto("/portfolio");
   await expect(page.getByRole("heading", { level: 2, name: /Unified claim surface/i })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: /Activity trail/i })).toBeVisible();

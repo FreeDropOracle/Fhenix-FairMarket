@@ -58,6 +58,9 @@ importers:
 
   packages/frontend:
     dependencies:
+      ethers:
+        specifier: ^6.14.0
+        version: 6.16.0
       next:
         specifier: ^15.0.0
         version: 15.5.15(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)

@@ -487,6 +487,22 @@ select:focus-visible {
   border: 1px solid rgba(176, 164, 224, 0.14);
   background: linear-gradient(180deg, rgba(14, 13, 18, 0.94), rgba(7, 7, 10, 0.98));
 }
+.seller-action {
+  transition: color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+.seller-action--danger {
+  color: var(--danger-400);
+  border-color: rgba(255, 139, 156, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 22px rgba(255, 139, 156, 0.12);
+}
+.seller-action--success {
+  color: var(--success-400);
+  border-color: rgba(115, 230, 185, 0.26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 22px rgba(115, 230, 185, 0.1);
+}
+.seller-action--neutral {
+  color: var(--text-high);
+}
 .hero-signal-grid, .readiness-grid, .route-grid, .about-grid, .config-grid { display: grid; gap: 16px; }
 .hero-signal-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 28px; }
 .signal-card, .readiness-card, .route-card, .detail-card, .placeholder-panel, .config-card {
@@ -694,6 +710,17 @@ select:focus-visible {
   align-content: end;
   min-height: 132px;
 }
+.auction-card__countdown-chip {
+  width: fit-content;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(115, 230, 185, 0.22);
+  background: rgba(6, 16, 14, 0.72);
+  color: var(--success-400);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
 .auction-card__lot {
   color: var(--text-low);
   font-size: 0.82rem;
@@ -708,6 +735,10 @@ select:focus-visible {
   font-size: clamp(2.2rem, 4vw, 3.3rem);
   line-height: 0.92;
   letter-spacing: -0.04em;
+}
+.auction-card__clock[data-live="true"] {
+  max-width: 12ch;
+  font-size: clamp(1.65rem, 3.2vw, 2.7rem);
 }
 .auction-card__body {
   display: grid;
@@ -915,6 +946,14 @@ select:focus-visible {
   display: grid;
   gap: 10px;
 }
+.field-block--full {
+  grid-column: 1 / -1;
+}
+.duration-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
 .field-input {
   min-height: 52px;
   padding: 0 14px;
@@ -927,11 +966,46 @@ select:focus-visible {
   outline: 2px solid rgba(121, 81, 255, 0.44);
   outline-offset: 2px;
 }
+.duration-summary {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(170, 145, 255, 0.14);
+  background: linear-gradient(180deg, rgba(17, 14, 28, 0.84), rgba(10, 8, 19, 0.92));
+}
+.duration-summary[data-invalid="true"] {
+  border-color: rgba(255, 139, 156, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 139, 156, 0.08);
+}
+.duration-summary__eyebrow {
+  color: var(--text-low);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.duration-summary strong {
+  font-size: 1.1rem;
+}
+.duration-summary p {
+  margin: 0;
+  color: var(--text-mid);
+  line-height: 1.65;
+}
 .create-summary-card {
   gap: 20px;
 }
 .create-launch-button {
   width: auto;
+}
+.create-feedback__actions {
+  display: grid;
+  gap: 10px;
+}
+.create-feedback__meta {
+  color: var(--text-mid);
+  font-size: 0.84rem;
+  line-height: 1.6;
 }
 .action-console {
   display: grid;
@@ -1253,6 +1327,7 @@ select:focus-visible {
   .readiness-grid, .route-grid, .about-grid, .hero-signal-grid, .config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .marketplace-hero, .detail-hero, .detail-grid, .create-grid, .auction-grid { grid-template-columns: 1fr; }
   .auction-card__metrics, .summary-signal-grid, .field-grid, .marketplace-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .duration-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .action-console__grid,
   .action-console__meta,
   .action-console__statgrid,
@@ -1274,6 +1349,7 @@ select:focus-visible {
   .shell-nav { overflow-x: auto; justify-content: flex-start; }
   .health-bar { grid-template-columns: 1fr; padding: 14px 18px 0; }
   .readiness-grid, .route-grid, .about-grid, .hero-signal-grid, .config-grid { grid-template-columns: 1fr; }
+  .duration-grid { grid-template-columns: 1fr; }
   .section-header, .brand-footnote { flex-direction: column; align-items: flex-start; }
   .marketplace-overview-grid, .auction-card__metrics, .summary-signal-grid, .field-grid { grid-template-columns: 1fr; }
   .auction-card__foot, .auction-card__actions, .detail-hero__meta, .create-hero, .create-hero__actions, .timeline-row {

@@ -1,11 +1,14 @@
 "use client";
 
-import { startTransition, useState } from "react";
+import { formatEther, parseEther } from "ethers";
+import { useRouter } from "next/navigation";
+import { startTransition, useEffect, useState } from "react";
 
 import { StatusPill, type StatusPillTone } from "@/components/status-pill";
 import { useWallet } from "@/components/wallet-provider";
-import { appConfig, formatAddress } from "@/lib/app-config";
+import { appConfig, formatAddress, isAddressLike } from "@/lib/app-config";
 import type { AuctionState } from "@/lib/auctions";
+import { lockEscrowWithWallet, readEscrowBalanceWithWallet } from "@/lib/live-auction-actions";
 
 type ActionMode = "escrow" | "bid";
 type StageState = "idle" | "active" | "done";
@@ -27,6 +30,17 @@ type AuctionActionConsoleProps = {
   openingBidLabel: string;
   escrowLabel: string;
   confidentialityLabel: string;
+  onChain?: {
+    auctionId: number;
+    bidCount: number;
+    endTimeUnix: number;
+    nftContractAddress: string;
+    sellerClaimed: boolean;
+    sellerDepositWei: string;
+    sellerPayoutWei: string;
+    tokenId: string;
+    totalEscrowWei: string;
+  };
 };
 
 const escrowStages: StageDefinition[] = [
@@ -90,17 +104,25 @@ function formatEth(value: number) {
   return `${value.toFixed(2)} ETH`;
 }
 
-function getPostureMessage(state: AuctionState) {
+function formatEthFromWeiString(value: string) {
+  return `${Number.parseFloat(formatEther(BigInt(value))).toFixed(4)} ETH`;
+}
+
+function getPostureMessage(state: AuctionState, isLiveAuction: boolean) {
   switch (state) {
     case "resolving":
       return "Bid entry is closed. This lot is already moving through the async settlement path.";
     case "finalized":
       return "Settlement is complete. Claim and settlement surfaces are now the next safe route.";
+    case "cancelled":
+      return "This lot was cancelled by the seller. New bidding is closed and the claim path is now more relevant.";
     case "voided":
       return "This lot already moved into fallback. Refund actions are now the safest route.";
     case "active":
     default:
-      return "This lot is open for escrow staging and confidential bidding.";
+      return isLiveAuction
+        ? "This lot is open for real on-chain escrow locking right now."
+        : "This lot is open for escrow staging and confidential bidding.";
   }
 }
 
@@ -111,25 +133,83 @@ export function AuctionActionConsole({
   openingBidAmount,
   openingBidLabel,
   escrowLabel,
-  confidentialityLabel
+  confidentialityLabel,
+  onChain
 }: AuctionActionConsoleProps) {
   const wallet = useWallet();
+  const router = useRouter();
   const [mode, setMode] = useState<ActionMode>("escrow");
   const [escrowInput, setEscrowInput] = useState("1.00");
   const [bidInput, setBidInput] = useState("0.85");
   const [stagedEscrow, setStagedEscrow] = useState(0);
+  const [walletEscrowWei, setWalletEscrowWei] = useState("0");
+  const [isRefreshingWalletEscrow, setIsRefreshingWalletEscrow] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [headline, setHeadline] = useState("Choose your next action");
   const [note, setNote] = useState("Connect on Sepolia, add escrow, then continue to a confidential bid.");
   const [notice, setNotice] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
   const [stages, setStages] = useState<ActionStage[]>(buildStages(escrowStages, null));
+  const isLiveAuction = Boolean(onChain);
   const isAuctionActive = auctionState === "active";
   const needsWallet = !wallet.hasProvider || !wallet.isConnected || !wallet.isSupportedNetwork;
+  const marketReady = isAddressLike(appConfig.contracts.marketProxyAddress);
+  const walletEscrowLabel = !wallet.hasProvider
+    ? "Wallet unavailable"
+    : !wallet.isConnected
+      ? "Connect wallet"
+      : !wallet.isSupportedNetwork
+        ? "Switch to Sepolia"
+        : isRefreshingWalletEscrow
+          ? "Checking on chain..."
+          : BigInt(walletEscrowWei) > 0n
+            ? formatEthFromWeiString(walletEscrowWei)
+            : "Nothing locked yet";
 
   const resetStageRail = (nextMode: ActionMode) => {
     setStages(buildStages(nextMode === "escrow" ? escrowStages : bidStages, null));
   };
+
+  useEffect(() => {
+    if (!isLiveAuction || !onChain || !window.ethereum || !wallet.account || !wallet.isConnected || !wallet.isSupportedNetwork || !marketReady) {
+      setWalletEscrowWei("0");
+      setIsRefreshingWalletEscrow(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshEscrow = async () => {
+      setIsRefreshingWalletEscrow(true);
+
+      try {
+        const preview = await readEscrowBalanceWithWallet(
+          window.ethereum!,
+          appConfig.contracts.marketProxyAddress,
+          BigInt(onChain.auctionId),
+          wallet.account!
+        );
+
+        if (!cancelled) {
+          setWalletEscrowWei(preview.escrowWei);
+        }
+      } catch {
+        if (!cancelled) {
+          setWalletEscrowWei("0");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsRefreshingWalletEscrow(false);
+        }
+      }
+    };
+
+    void refreshEscrow();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLiveAuction, marketReady, onChain, wallet.account, wallet.isConnected, wallet.isSupportedNetwork]);
 
   const handleSwitchMode = (nextMode: ActionMode) => {
     if (isRunning) {
@@ -141,28 +221,39 @@ export function AuctionActionConsole({
       setHeadline(nextMode === "escrow" ? "Add escrow first" : "Seal a confidential bid");
       setNote(
         nextMode === "escrow"
-          ? "Escrow must be added before confidential bidding can open for this lot."
-          : "A confidential bid becomes available after you have enough escrow in place."
+          ? isLiveAuction
+            ? "Lock real escrow on chain before expecting seller cancellation or refund logic to see it."
+            : "Escrow must be added before confidential bidding can open for this lot."
+          : isLiveAuction
+            ? "The escrow lane is live on chain. The confidential bid lane will stay closed here until its encrypted wallet path is fully wired."
+            : "A confidential bid becomes available after you have enough escrow in place."
       );
       setNotice(null);
       resetStageRail(nextMode);
     });
   };
 
-  const handleWalletCta = async () => {
+  const ensureWalletReady = async () => {
     if (!wallet.hasProvider) {
       window.open("https://metamask.io/download/", "_blank", "noopener,noreferrer");
-      return;
+      return false;
     }
 
     if (!wallet.isConnected) {
       await wallet.connect();
-      return;
+      return false;
     }
 
     if (!wallet.isSupportedNetwork) {
       await wallet.switchToSepolia();
+      return false;
     }
+
+    return true;
+  };
+
+  const handleWalletCta = async () => {
+    await ensureWalletReady();
   };
 
   const runStageSequence = async (definitions: StageDefinition[]) => {
@@ -184,12 +275,56 @@ export function AuctionActionConsole({
 
     setIsRunning(true);
     setNotice(null);
-    setHeadline("Adding escrow");
-    setNote("Preparing the escrow step and its confirmation trail.");
+    setHeadline(isLiveAuction ? "Locking escrow on chain" : "Adding escrow");
+    setNote(
+      isLiveAuction ? "Waiting for the wallet signature and the on-chain confirmation trail." : "Preparing the escrow step and its confirmation trail."
+    );
     setLastReceipt(null);
 
     try {
-      await runStageSequence(escrowStages);
+      if (isLiveAuction) {
+        if (!onChain || !window.ethereum || !marketReady) {
+          setNotice("The live auction contract is not ready in this frontend.");
+          return;
+        }
+
+        const walletReady = await ensureWalletReady();
+        if (!walletReady || !wallet.account) {
+          return;
+        }
+
+        const amountWei = parseEther(escrowInput);
+        setStages(buildStages(escrowStages, 0));
+        const result = await lockEscrowWithWallet({
+          account: wallet.account,
+          amountWei,
+          auctionId: BigInt(onChain.auctionId),
+          explorerBaseUrl: appConfig.chain.blockExplorerUrl,
+          marketAddress: appConfig.contracts.marketProxyAddress,
+          onProgress: (message) => {
+            setNotice(message);
+            if (message.includes("Waiting")) {
+              setStages(buildStages(escrowStages, 1));
+            }
+          },
+          provider: window.ethereum
+        });
+
+        setStages(buildStages(escrowStages, null, true));
+        setWalletEscrowWei(result.walletEscrowWei);
+        setHeadline("Escrow locked on chain");
+        setNote("This auction now sees your escrow on chain, so seller cancellation and refund logic will account for it.");
+        setLastReceipt(`Escrow locked for ${formatEth(amount)} on ${auctionTitle}.`);
+        router.refresh();
+        return;
+      }
+
+      for (let index = 0; index < escrowStages.length; index += 1) {
+        setStages(buildStages(escrowStages, index));
+        await wait(index === 0 ? 450 : 650);
+      }
+
+      setStages(buildStages(escrowStages, null, true));
       setStagedEscrow((current) => current + amount);
       setHeadline("Escrow added");
       setNote("You can now continue to the confidential bid step for this lot.");
@@ -197,12 +332,23 @@ export function AuctionActionConsole({
       startTransition(() => {
         setMode("bid");
       });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Escrow locking failed.");
+      resetStageRail("escrow");
     } finally {
       setIsRunning(false);
     }
   };
 
   const handleBidSubmit = async () => {
+    if (isLiveAuction) {
+      setHeadline("Confidential bid lane pending");
+      setNote("Your escrow can be locked on chain from this page, but sealed bid submission is still disabled here until the production encrypted wallet path is wired.");
+      setNotice("No bid transaction was sent. This release only activates real on-chain escrow for live auctions.");
+      resetStageRail("bid");
+      return;
+    }
+
     const amount = Number.parseFloat(bidInput);
 
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -240,7 +386,14 @@ export function AuctionActionConsole({
     }
   };
 
-  const actionPrimaryLabel = mode === "escrow" ? "Add escrow" : "Seal bid";
+  const actionPrimaryLabel =
+    mode === "escrow"
+      ? isLiveAuction
+        ? "Lock escrow on chain"
+        : "Add escrow"
+      : isLiveAuction
+        ? "Bid lane unavailable"
+        : "Seal bid";
 
   return (
     <section className="action-console">
@@ -283,11 +436,11 @@ export function AuctionActionConsole({
             </div>
             <div className="action-console__stat">
               <span>Your available escrow</span>
-              <strong>{stagedEscrow > 0 ? formatEth(stagedEscrow) : "Nothing added yet"}</strong>
+              <strong>{isLiveAuction ? walletEscrowLabel : stagedEscrow > 0 ? formatEth(stagedEscrow) : "Nothing added yet"}</strong>
             </div>
           </div>
 
-          <p className="detail-copy">{getPostureMessage(auctionState)}</p>
+          <p className="detail-copy">{getPostureMessage(auctionState, isLiveAuction)}</p>
 
           {needsWallet ? (
             <div className="action-console__gate">
@@ -320,6 +473,8 @@ export function AuctionActionConsole({
                   ? "This lot is already resolving. New escrow or bids stay closed until settlement finishes."
                   : auctionState === "finalized"
                     ? "This lot is finalized. Claims and history are now more relevant than bidding."
+                    : auctionState === "cancelled"
+                      ? "This lot was cancelled by the seller. Claim actions are now more relevant than bidding."
                     : "This lot already entered fallback and new bidding is permanently closed."}
               </p>
             </div>
@@ -339,7 +494,9 @@ export function AuctionActionConsole({
                     </label>
                   </div>
                   <p className="action-console__hint">
-                    A payable escrow lock must land before any confidential bid can be accepted for this auction.
+                    {isLiveAuction
+                      ? "This button sends a real payable lockEscrow transaction. Once it confirms, seller cancellation and refund routes will read the same on-chain escrow."
+                      : "A payable escrow lock must land before any confidential bid can be accepted for this auction."}
                   </p>
                   <button
                     className="primary-action action-console__cta"
@@ -364,11 +521,13 @@ export function AuctionActionConsole({
                     </label>
                   </div>
                   <p className="action-console__hint">
-                    {confidentialityLabel}. Add enough escrow first, then seal the bid amount you want to submit.
+                    {isLiveAuction
+                      ? "This auction already accepts real escrow on chain. Sealed bid submission is still closed here until the encrypted wallet path is upgraded end to end."
+                      : `${confidentialityLabel}. Add enough escrow first, then seal the bid amount you want to submit.`}
                   </p>
                   <button
                     className="primary-action action-console__cta"
-                    disabled={isRunning}
+                    disabled={isRunning || isLiveAuction}
                     onClick={handleBidSubmit}
                     type="button"
                   >

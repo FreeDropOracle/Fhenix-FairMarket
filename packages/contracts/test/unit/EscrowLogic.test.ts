@@ -149,6 +149,24 @@ describe("FhenixFairMarket Phase 1", function () {
             value: ethers.parseEther("1")
           }
         )
+    ).to.not.be.reverted;
+
+    await nft.connect(seller).mint(seller.address);
+    await nft.connect(seller).approve(await market.getAddress(), 2n);
+
+    await expect(
+      market
+        .connect(seller)
+        ["createAuction(address,uint256,uint256,uint256,bool)"](
+          await nft.getAddress(),
+          2n,
+          59,
+          ethers.parseEther("1"),
+          false,
+          {
+            value: ethers.parseEther("1")
+          }
+        )
     ).to.be.revertedWithCustomError(market, "InvalidDuration");
 
     await expect(
@@ -156,8 +174,8 @@ describe("FhenixFairMarket Phase 1", function () {
         .connect(seller)
         ["createAuction(address,uint256,uint256,uint256,bool)"](
           await nft.getAddress(),
-          1n,
-          31 * 24 * 60 * 60,
+          2n,
+          91 * 24 * 60 * 60,
           ethers.parseEther("1"),
           false,
           {

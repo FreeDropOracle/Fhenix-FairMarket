@@ -47,4 +47,14 @@ interface ISettlementEngine {
         uint256 winningAmount,
         bytes calldata avsProof
     ) external returns (bool);
+
+    function verifyShieldedResolutionProof(
+        address market,
+        uint256 auctionId,
+        bytes32 requestId,
+        bytes32 winnerIdentity,
+        bytes32 winnerCiphertext,
+        uint256 winningAmount,
+        bytes calldata avsProof
+    ) external returns (bool);
 }

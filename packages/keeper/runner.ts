@@ -27,14 +27,23 @@ const MARKET_ABI = [
   "function getAuctionStartingPrice(uint256 auctionId) view returns (uint256)",
   "function getResolutionRequest(uint256 auctionId) view returns (bytes32 requestId, bytes32 winnerHandle, bytes32 amountHandle, uint64 requestedAt)",
   "function getBidders(uint256 auctionId) view returns (address[])",
+  "function getShieldedCommitments(uint256 auctionId) view returns (bytes32[])",
   "function getEncryptedBid(uint256 auctionId, address bidder) view returns (bytes32)",
+  "function getShieldedEncryptedBid(uint256 auctionId, bytes32 commitmentHash) view returns (bytes32)",
   "function escrowBalances(uint256 auctionId, address bidder) view returns (uint256)",
+  "function shieldedEscrowVault() view returns (address)",
   "function triggerFinalize(uint256 auctionId) external",
-  "function submitResolution(uint256 auctionId, address winner, bytes32 winnerCiphertext, uint256 winningAmount, bytes avsProof) external returns (bool)"
+  "function submitResolution(uint256 auctionId, address winner, bytes32 winnerCiphertext, uint256 winningAmount, bytes avsProof) external returns (bool)",
+  "function submitShieldedResolution(uint256 auctionId, bytes32 winnerCommitmentHash, bytes32 winnerCiphertext, uint256 winningAmount, bytes avsProof) external returns (bool)"
 ];
 
 const AVS_ABI = [
-  "function computeDigest(address market, uint256 auctionId, bytes32 requestId, address winner, bytes32 winnerCiphertext, uint256 winningAmount) view returns (bytes32)"
+  "function computeDigest(address market, uint256 auctionId, bytes32 requestId, address winner, bytes32 winnerCiphertext, uint256 winningAmount) view returns (bytes32)",
+  "function computeShieldedDigest(address market, uint256 auctionId, bytes32 requestId, bytes32 winnerIdentity, bytes32 winnerCiphertext, uint256 winningAmount) view returns (bytes32)"
+];
+
+const SHIELDED_VAULT_ABI = [
+  "function previewCommitment(bytes32 commitmentHash) view returns (uint256 auctionId, uint256 amount, bool refundUnlocked, bool claimed)"
 ];
 
 type RuntimeMetrics = {
@@ -251,7 +260,8 @@ async function startDispatcher(
         await store.storeResolutionArtifact({
           requestId: resolution.requestId,
           auctionId: resolution.auctionId,
-          winner: normalizeWinnerAddress(resolution.winner),
+          winner: normalizeWinnerIdentity(resolution.winnerKind, resolution.winner),
+          winnerKind: resolution.winnerKind,
           winnerCiphertext: resolution.winnerCiphertext,
           avsProof: resolution.avsProof,
           winningAmount: resolution.winningAmount,
@@ -344,19 +354,30 @@ async function startAvsSubmitter(
             auctionId: artifact.auctionId,
             requestId: artifact.requestId,
             winner: artifact.winner,
+            winnerKind: artifact.winnerKind ?? "public",
             winnerCiphertext: artifact.winnerCiphertext,
             winningAmount: artifact.winningAmount
           };
 
           try {
-            const digest = await digestReader.computeDigest(
-              config.marketAddress,
-              payload.auctionId,
-              payload.requestId,
-              payload.winner,
-              payload.winnerCiphertext,
-              payload.winningAmount
-            );
+            const digest =
+              payload.winnerKind === "shielded"
+                ? await digestReader.computeShieldedDigest(
+                    config.marketAddress,
+                    payload.auctionId,
+                    payload.requestId,
+                    payload.winner,
+                    payload.winnerCiphertext,
+                    payload.winningAmount
+                  )
+                : await digestReader.computeDigest(
+                    config.marketAddress,
+                    payload.auctionId,
+                    payload.requestId,
+                    payload.winner,
+                    payload.winnerCiphertext,
+                    payload.winningAmount
+                  );
 
             const proof = await submitter.submitVerifiedResolution(payload, payload, digest, operatorSigners, writer);
             await store.markResolutionArtifactSubmitted(artifact.requestId, Date.now());
@@ -441,20 +462,52 @@ class EthersResolutionWriter {
   }
 
   async submitResolution(payload: AttestationPayload, proof: AttestationProofEnvelope): Promise<{ txHash?: string }> {
-    const encodedProof = AbiCoder.defaultAbiCoder().encode(
-      [
-        "tuple(uint256 auctionId, bytes32 requestId, address winner, bytes32 winnerCiphertext, uint256 winningAmount, address[] operators, bytes[] signatures)"
-      ],
-      [[payload.auctionId, payload.requestId, payload.winner, payload.winnerCiphertext, payload.winningAmount, proof.operators, proof.signatures]]
-    );
-
-    const tx = await this.contract["submitResolution(uint256,address,bytes32,uint256,bytes)"](
-      payload.auctionId,
-      payload.winner,
-      payload.winnerCiphertext,
-      payload.winningAmount,
-      encodedProof
-    );
+    const tx =
+      payload.winnerKind === "shielded"
+        ? await this.contract.submitShieldedResolution(
+            payload.auctionId,
+            payload.winner,
+            payload.winnerCiphertext,
+            payload.winningAmount,
+            AbiCoder.defaultAbiCoder().encode(
+              [
+                "tuple(uint256 auctionId, bytes32 requestId, bytes32 winnerIdentity, bytes32 winnerCiphertext, uint256 winningAmount, address[] operators, bytes[] signatures)"
+              ],
+              [
+                [
+                  payload.auctionId,
+                  payload.requestId,
+                  payload.winner,
+                  payload.winnerCiphertext,
+                  payload.winningAmount,
+                  proof.operators,
+                  proof.signatures
+                ]
+              ]
+            )
+          )
+        : await this.contract["submitResolution(uint256,address,bytes32,uint256,bytes)"](
+            payload.auctionId,
+            payload.winner,
+            payload.winnerCiphertext,
+            payload.winningAmount,
+            AbiCoder.defaultAbiCoder().encode(
+              [
+                "tuple(uint256 auctionId, bytes32 requestId, address winner, bytes32 winnerCiphertext, uint256 winningAmount, address[] operators, bytes[] signatures)"
+              ],
+              [
+                [
+                  payload.auctionId,
+                  payload.requestId,
+                  payload.winner,
+                  payload.winnerCiphertext,
+                  payload.winningAmount,
+                  proof.operators,
+                  proof.signatures
+                ]
+              ]
+            )
+          );
 
     await tx.wait();
     return { txHash: tx.hash };
@@ -593,14 +646,33 @@ async function enqueuePendingResolutionJobs(
 
 async function collectEncryptedBidsFromChain(marketContract: Contract, auctionId: bigint): Promise<StoredDispatchJob["bids"]> {
   const bidders = (await marketContract.getBidders(auctionId)) as string[];
+  const shieldedCommitments = (await marketContract.getShieldedCommitments(auctionId)) as string[];
   const bids: StoredDispatchJob["bids"] = [];
 
   for (const bidder of bidders) {
     bids.push({
       bidder,
       encryptedBid: await marketContract.getEncryptedBid(auctionId, bidder),
-      availableEscrow: BigInt((await marketContract.escrowBalances(auctionId, bidder)).toString())
+      availableEscrow: BigInt((await marketContract.escrowBalances(auctionId, bidder)).toString()),
+      isShielded: false
     });
+  }
+
+  if (shieldedCommitments.length > 0) {
+    const shieldedVaultAddress = String(await marketContract.shieldedEscrowVault());
+    if (shieldedVaultAddress && shieldedVaultAddress !== ZeroAddress) {
+      const vaultContract = new Contract(shieldedVaultAddress, SHIELDED_VAULT_ABI, marketContract.runner);
+
+      for (const commitmentHash of shieldedCommitments) {
+        const preview = (await vaultContract.previewCommitment(commitmentHash)) as readonly [bigint, bigint, boolean, boolean];
+        bids.push({
+          bidder: commitmentHash,
+          encryptedBid: await marketContract.getShieldedEncryptedBid(auctionId, commitmentHash),
+          availableEscrow: BigInt(preview[1].toString()),
+          isShielded: true
+        });
+      }
+    }
   }
 
   return bids;
@@ -618,8 +690,15 @@ function isValidPrivateKey(rawPrivateKey: string | undefined): rawPrivateKey is 
   return rawPrivateKey !== undefined && /^0x[0-9a-fA-F]{64}$/.test(rawPrivateKey);
 }
 
-function normalizeWinnerAddress(winner: string | null): string {
-  return winner === null || winner.trim() === "" ? ZeroAddress : winner;
+function normalizeWinnerIdentity(
+  winnerKind: "public" | "shielded" | "none",
+  winner: string | null
+): string {
+  if (winner === null || winner.trim() === "") {
+    return winnerKind === "shielded" ? ZeroAddress : ZeroAddress;
+  }
+
+  return winner;
 }
 
 async function buildStoreMetricsSnapshot(store: AuctionStateStore): Promise<{

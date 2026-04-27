@@ -37,6 +37,7 @@ export interface StoredDispatchBid {
   bidder: string;
   encryptedBid: string;
   availableEscrow: bigint;
+  isShielded?: boolean;
 }
 
 export interface StoredDispatchJob {
@@ -54,6 +55,7 @@ export interface StoredResolutionArtifact {
   requestId: string;
   auctionId: bigint;
   winner: string;
+  winnerKind?: "public" | "shielded" | "none";
   winnerCiphertext: string;
   avsProof: string;
   winningAmount: bigint;
@@ -422,7 +424,8 @@ function deserializeDispatchJob(record: Record<string, unknown>): StoredDispatch
           return {
             bidder: String(bid.bidder ?? ""),
             encryptedBid: String(bid.encryptedBid ?? ""),
-            availableEscrow: BigInt(String(bid.availableEscrow ?? "0"))
+            availableEscrow: BigInt(String(bid.availableEscrow ?? "0")),
+            isShielded: bid.isShielded === undefined ? undefined : Boolean(bid.isShielded)
           };
         })
       : [],
@@ -444,6 +447,8 @@ function deserializeResolution(record: Record<string, unknown>): StoredResolutio
     requestId: String(record.requestId ?? ""),
     auctionId: BigInt(String(record.auctionId ?? "0")),
     winner: String(record.winner ?? ""),
+    winnerKind:
+      record.winnerKind === "shielded" ? "shielded" : record.winnerKind === "none" ? "none" : "public",
     winnerCiphertext: String(record.winnerCiphertext ?? ""),
     avsProof: String(record.avsProof ?? ""),
     winningAmount: BigInt(String(record.winningAmount ?? "0")),

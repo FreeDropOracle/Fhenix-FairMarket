@@ -8,6 +8,7 @@ export interface AttestationPayload {
   winner: string;
   winnerCiphertext: string;
   winningAmount: bigint;
+  winnerKind?: "public" | "shielded" | "none";
 }
 
 export interface FraudProofExpectation extends AttestationPayload {}
@@ -97,6 +98,7 @@ export function validateFraudProof(expected: FraudProofExpectation, payload: Att
   if (
     expected.auctionId !== payload.auctionId ||
     expected.requestId !== payload.requestId ||
+    (expected.winnerKind ?? "public") !== (payload.winnerKind ?? "public") ||
     expected.winner !== payload.winner ||
     expected.winnerCiphertext !== payload.winnerCiphertext ||
     expected.winningAmount !== payload.winningAmount

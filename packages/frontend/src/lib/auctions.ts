@@ -41,6 +41,7 @@ export type AuctionRecord = {
   freshnessScore: number;
   onChain?: {
     auctionId: number;
+    assetClaimed: boolean;
     bidCount: number;
     endTimeUnix: number;
     nftContractAddress: string;
@@ -49,6 +50,7 @@ export type AuctionRecord = {
     sellerPayoutWei: string;
     tokenId: string;
     totalEscrowWei: string;
+    winnerAddress: string;
   };
 };
 
@@ -395,8 +397,8 @@ export function getAuctionStatusLabel(state: AuctionState) {
 
 export function getMarketplaceStats(records: AuctionRecord[]) {
   const activeCount = records.filter((auction) => auction.state === "active").length;
+  const confidentialCount = records.filter((auction) => auction.onChain).length;
   const resolvingCount = records.filter((auction) => auction.state === "resolving").length;
-  const totalEscrow = records.reduce((sum, auction) => sum + auction.escrowScore, 0);
 
   return [
     {
@@ -405,9 +407,9 @@ export function getMarketplaceStats(records: AuctionRecord[]) {
       note: "Curated across the current Sepolia desk."
     },
     {
-      label: "Escrow volume",
-      value: `${totalEscrow.toFixed(2)} ETH`,
-      note: "Visible liquidity already locked into the sealed-bid surface."
+      label: "Public price surface",
+      value: "Hidden",
+      note: "The public desk no longer surfaces live escrow amounts for sealed-bid lots."
     },
     {
       label: "Resolving now",
@@ -416,8 +418,8 @@ export function getMarketplaceStats(records: AuctionRecord[]) {
     },
     {
       label: "Live actions",
-      value: `${activeCount} active`,
-      note: "Immediate candidates for escrow expansion and confidential bids."
+      value: `${activeCount} active / ${confidentialCount} confidential`,
+      note: "Only settlement state and route readiness stay visible on the public desk."
     }
   ] as const;
 }

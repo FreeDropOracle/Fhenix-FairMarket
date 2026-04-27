@@ -17,4 +17,5 @@ packages/*/.next/
 packages/keeper/state/*.json
 packages/frontend/playwright-report/
 packages/frontend/test-results/
+packages/frontend/*.tsbuildinfo
 .vercel

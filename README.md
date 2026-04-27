@@ -8,10 +8,30 @@
 [![Solidity](https://img.shields.io/badge/Solidity-^0.8.25-363636?logo=solidity)](https://soliditylang.org)
 [![Fhenix](https://img.shields.io/badge/Fhenix-fhEVM-6C3CE1)](https://fhenix.io)
 [![EigenLayer](https://img.shields.io/badge/EigenLayer-AVS-0ea5e9)](https://eigenlayer.xyz)
-[![Status](https://img.shields.io/badge/Status-Audit--Ready-22c55e)]()
+[![Status](https://img.shields.io/badge/Status-Sepolia%20Live-22c55e)](https://fhenix-fair-market-app.vercel.app/portfolio)
+[![Network](https://img.shields.io/badge/Network-Ethereum%20Sepolia-2563eb)](https://sepolia.etherscan.io)
 [![Version](https://img.shields.io/badge/Version-2.0-orange)]()
 
 </div>
+
+<div align="center">
+
+[![Landing Page](https://img.shields.io/badge/Landing%20Page-Open-7c3aed?style=for-the-badge)](https://fhenix-fair-market-lp.vercel.app/)
+[![Documentation](https://img.shields.io/badge/Documentation-Read-0ea5e9?style=for-the-badge)](https://doc-fhenix-fair-market.vercel.app/)
+[![Live App](https://img.shields.io/badge/Live%20App-Sepolia-22c55e?style=for-the-badge)](https://fhenix-fair-market-app.vercel.app/portfolio)
+
+</div>
+
+## Public Entry Points
+
+- **Landing Page:** project overview and public-facing introduction
+- **Documentation:** technical and user documentation
+- **Live App:** deployed application connected to Ethereum Sepolia
+
+> Public links:
+> Landing - `https://fhenix-fair-market-lp.vercel.app/`
+> Docs - `https://doc-fhenix-fair-market.vercel.app/`
+> App - `https://fhenix-fair-market-app.vercel.app/portfolio`
 
 ---
 

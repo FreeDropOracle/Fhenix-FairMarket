@@ -333,6 +333,13 @@ async function startAvsSubmitter(
 
       if (writer && digestReader && operatorSigners.length >= config.avsThreshold) {
         for (const artifact of pendingArtifacts) {
+          const currentState = await writer.getAuctionState(artifact.auctionId);
+          if (currentState !== 2n) {
+            await store.updateAuctionState(artifact.auctionId, currentState, Date.now());
+            await store.markResolutionArtifactSubmitted(artifact.requestId, Date.now());
+            continue;
+          }
+
           const payload: AttestationPayload = {
             auctionId: artifact.auctionId,
             requestId: artifact.requestId,
@@ -358,6 +365,13 @@ async function startAvsSubmitter(
               `[keeper] submitted resolution ${artifact.requestId} for auction ${artifact.auctionId.toString()} with ${proof.signerCount} AVS signatures`
             );
           } catch (error) {
+            const refreshedState = await writer.getAuctionState(artifact.auctionId).catch(() => undefined);
+            if (refreshedState !== undefined && refreshedState !== 2n) {
+              await store.updateAuctionState(artifact.auctionId, refreshedState, Date.now());
+              await store.markResolutionArtifactSubmitted(artifact.requestId, Date.now());
+              continue;
+            }
+
             const reason = error instanceof Error ? error.message : String(error);
             await submitter.recordSlashingViolation(artifact.requestId, artifact.auctionId, reason, operatorSigners.map((operator) => operator.address));
             throw error;
@@ -391,10 +405,23 @@ class EthersAuctionFinalizer implements AuctionFinalizer {
   ): Promise<{ txHash?: string; gasUsed?: bigint; incentiveWei?: bigint }> {
     const auction = await this.contract.getAuction(auctionId);
     const rewardEstimate = estimateFinalizeReward(BigInt(auction[4].toString()));
-
-    const tx = await this.contract.triggerFinalize(auctionId, {
+    const feeOverrides = {
       maxPriorityFeePerGas: parseUnits(options.priorityFeeGwei.toString(), "gwei")
-    });
+    };
+
+    let tx;
+    try {
+      tx = await this.contract.triggerFinalize(auctionId, feeOverrides);
+    } catch (error) {
+      if (!shouldRetryFinalizeWithManualGas(error)) {
+        throw error;
+      }
+
+      tx = await this.contract.triggerFinalize(auctionId, {
+        ...feeOverrides,
+        gasLimit: 800_000n
+      });
+    }
     const receipt = await tx.wait();
 
     return {
@@ -407,6 +434,11 @@ class EthersAuctionFinalizer implements AuctionFinalizer {
 
 class EthersResolutionWriter {
   constructor(private readonly contract: Contract) {}
+
+  async getAuctionState(auctionId: bigint): Promise<bigint> {
+    const auction = await this.contract.getAuction(auctionId);
+    return BigInt(auction[5].toString());
+  }
 
   async submitResolution(payload: AttestationPayload, proof: AttestationProofEnvelope): Promise<{ txHash?: string }> {
     const encodedProof = AbiCoder.defaultAbiCoder().encode(
@@ -427,6 +459,36 @@ class EthersResolutionWriter {
     await tx.wait();
     return { txHash: tx.hash };
   }
+}
+
+function shouldRetryFinalizeWithManualGas(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as {
+    code?: string;
+    shortMessage?: string;
+    message?: string;
+    info?: { error?: { code?: number; message?: string } };
+  };
+
+  if (candidate.code === "UNPREDICTABLE_GAS_LIMIT") {
+    return true;
+  }
+  if (candidate.code === "CALL_EXCEPTION" && !candidate.info?.error?.code) {
+    return true;
+  }
+
+  const combinedMessage = [
+    candidate.shortMessage,
+    candidate.message,
+    candidate.info?.error?.message
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+
+  return /estimateGas|missing revert data|execution reverted/i.test(combinedMessage);
 }
 
 class StoreBackedDispatchQueue implements BatchDispatchQueue {

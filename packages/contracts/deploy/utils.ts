@@ -82,7 +82,7 @@ export function resolveRpcUrl(targetNetwork: string): string {
 
 export function resolveWebsocketUrl(targetNetwork: string): string {
   if (targetNetwork === "sepolia" || targetNetwork === "fhenixTestnet") {
-    return process.env.SEPOLIA_WS_URL || process.env.KEEPER_WS_URL || "";
+    return process.env.SEPOLIA_WS_URL || process.env.KEEPER_WS_URL || "wss://ethereum-sepolia-rpc.publicnode.com";
   }
 
   return process.env.KEEPER_WS_URL || "ws://127.0.0.1:8545";

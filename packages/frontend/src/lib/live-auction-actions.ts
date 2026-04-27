@@ -4,8 +4,14 @@ import type { Eip1193Provider } from "@/lib/eip1193";
 
 const marketInterface = new Interface([
   "function lockEscrow(uint256 auctionId) payable",
-  "function escrowBalances(uint256 auctionId, address bidder) view returns (uint256)"
+  "function placeBid(uint256 auctionId, bytes32 encryptedBid)",
+  "function escrowBalances(uint256 auctionId, address bidder) view returns (uint256)",
+  "function getEncryptedBid(uint256 auctionId, address bidder) view returns (bytes32)"
 ]);
+
+const CIPHERTEXT_KIND_SHIFT = 248n;
+const EUINT96_KIND = 3n;
+const MAX_EUINT96_VALUE = (1n << 96n) - 1n;
 
 type JsonRpcReceipt = {
   status?: string;
@@ -22,7 +28,25 @@ type LockEscrowParams = {
   provider: Eip1193Provider;
 };
 
+type PlaceBidParams = {
+  account: string;
+  amountWei: bigint;
+  auctionId: bigint;
+  explorerBaseUrl: string;
+  marketAddress: string;
+  onProgress?: (message: string) => void;
+  provider: Eip1193Provider;
+};
+
 export type LockEscrowResult = {
+  txHash: string;
+  txUrl: string;
+  walletEscrowEth: string;
+  walletEscrowWei: string;
+};
+
+export type PlaceBidResult = {
+  encryptedBid: string;
   txHash: string;
   txUrl: string;
   walletEscrowEth: string;
@@ -36,6 +60,15 @@ type EscrowBalanceResult = {
 
 function toHexQuantity(value: bigint) {
   return `0x${value.toString(16)}`;
+}
+
+function encodeEuint96(value: bigint) {
+  if (value < 0n || value > MAX_EUINT96_VALUE) {
+    throw new Error("Bid amount is outside the supported encrypted range.");
+  }
+
+  const encoded = (EUINT96_KIND << CIPHERTEXT_KIND_SHIFT) | value;
+  return `0x${encoded.toString(16).padStart(64, "0")}`;
 }
 
 function normalizeErrorMessage(error: unknown) {
@@ -108,6 +141,23 @@ async function waitForReceipt(provider: Eip1193Provider, txHash: string, timeout
   throw new Error("Transaction confirmation timed out.");
 }
 
+async function readEncryptedBidWithWallet(
+  provider: Eip1193Provider,
+  marketAddress: string,
+  auctionId: bigint,
+  account: string
+) {
+  const normalizedMarketAddress = getAddress(marketAddress);
+  const normalizedAccount = getAddress(account);
+
+  return callContract(
+    provider,
+    normalizedMarketAddress,
+    marketInterface.encodeFunctionData("getEncryptedBid", [auctionId, normalizedAccount]),
+    (raw) => marketInterface.decodeFunctionResult("getEncryptedBid", raw)[0] as string
+  );
+}
+
 export async function readEscrowBalanceWithWallet(
   provider: Eip1193Provider,
   marketAddress: string,
@@ -165,6 +215,56 @@ export async function lockEscrowWithWallet({
     onProgress?.(`Escrow confirmed on chain: ${walletEscrow.escrowEth} ETH.`);
 
     return {
+      txHash,
+      txUrl: `${explorerBaseUrl}/tx/${txHash}`,
+      walletEscrowEth: walletEscrow.escrowEth,
+      walletEscrowWei: walletEscrow.escrowWei
+    };
+  } catch (error) {
+    throw new Error(normalizeErrorMessage(error));
+  }
+}
+
+export async function placeBidWithWallet({
+  account,
+  amountWei,
+  auctionId,
+  explorerBaseUrl,
+  marketAddress,
+  onProgress,
+  provider
+}: PlaceBidParams): Promise<PlaceBidResult> {
+  const normalizedAccount = getAddress(account);
+  const normalizedMarketAddress = getAddress(marketAddress);
+  const encryptedBid = encodeEuint96(amountWei);
+
+  try {
+    onProgress?.("Preparing the confidential bid envelope...");
+    onProgress?.("Confirm the bid transaction in your wallet...");
+    const txHash = await sendTransaction(provider, {
+      from: normalizedAccount,
+      to: normalizedMarketAddress,
+      data: marketInterface.encodeFunctionData("placeBid", [auctionId, encryptedBid])
+    });
+
+    onProgress?.("Waiting for the bid transaction confirmation...");
+    const receipt = await waitForReceipt(provider, txHash);
+    if (receipt.status !== "0x1") {
+      throw new Error("Confidential bid submission did not complete successfully.");
+    }
+
+    const [storedBid, walletEscrow] = await Promise.all([
+      readEncryptedBidWithWallet(provider, normalizedMarketAddress, auctionId, normalizedAccount),
+      readEscrowBalanceWithWallet(provider, normalizedMarketAddress, auctionId, normalizedAccount)
+    ]);
+
+    if (storedBid.toLowerCase() !== encryptedBid.toLowerCase()) {
+      throw new Error("The encrypted bid was not stored on chain as expected.");
+    }
+
+    onProgress?.("Confidential bid stored on chain.");
+    return {
+      encryptedBid,
       txHash,
       txUrl: `${explorerBaseUrl}/tx/${txHash}`,
       walletEscrowEth: walletEscrow.escrowEth,

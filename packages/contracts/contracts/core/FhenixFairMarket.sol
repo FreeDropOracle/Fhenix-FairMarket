@@ -103,7 +103,7 @@ contract FhenixFairMarket is
     uint256 private constant _BPS_DENOMINATOR = 10_000;
     uint256 private constant _DEFAULT_DYNAMIC_TIMEOUT = 30 minutes;
     uint256 private constant _KEEPER_FINALIZE_REWARD_BPS = 20;
-    uint256 private constant _MAX_CONFIDENTIAL_BID_VALUE = type(uint32).max;
+    uint256 private constant _MAX_CONFIDENTIAL_BID_VALUE = type(uint96).max;
     uint256 private constant _NETWORK_SAMPLE_CEILING = 10 minutes;
     uint256 private constant _NOT_ENTERED = 1;
     uint256 private constant _ENTERED = 2;
@@ -150,6 +150,7 @@ contract FhenixFairMarket is
     event RefundClaimed(uint256 indexed auctionId, address indexed claimant, uint256 escrowRefund, uint256 compensation);
     event SellerProceedsClaimed(uint256 indexed auctionId, address indexed seller, uint256 amount);
     event AssetClaimed(uint256 indexed auctionId, address indexed recipient, uint256 tokenId);
+    event CofheAdapterUpdated(address indexed previousAdapter, address indexed nextAdapter);
     event SettlementDependenciesUpdated(address indexed settlementEngine, address indexed slashedPot);
     event FallbackTriggered(uint256 indexed auctionId, uint256 elapsed, uint256 threshold);
     event FinalizationIncentiveReserved(
@@ -230,6 +231,15 @@ contract FhenixFairMarket is
 
         slashedPot = newSlashedPot;
         emit SettlementDependenciesUpdated(address(settlementEngine), address(newSlashedPot));
+    }
+
+    function setCofheAdapter(ICofheAdapter newAdapter) external onlyOwner {
+        _requireDependency(address(newAdapter));
+
+        address previousAdapter = address(cofheAdapter);
+        cofheAdapter = newAdapter;
+
+        emit CofheAdapterUpdated(previousAdapter, address(newAdapter));
     }
 
     function createAuction(

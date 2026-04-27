@@ -8,7 +8,7 @@ contract MockCofhe is CofheAdapter {
     using CofheCiphertextEncoding for bytes32;
 
     function expectPlaintext(bytes32 ciphertext, uint256 expectedPlaintext) external pure returns (bool) {
-        return ciphertext.decodeEuint32() == expectedPlaintext;
+        return ciphertext.decodeNumeric() == expectedPlaintext;
     }
 
     function expectBoolPlaintext(bytes32 ciphertext, bool expectedPlaintext) external pure returns (bool) {

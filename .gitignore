@@ -15,6 +15,7 @@ packages/*/deployments/
 packages/*/dist/
 packages/*/.next/
 packages/keeper/state/*.json
+packages/keeper/state/*.log
 packages/frontend/playwright-report/
 packages/frontend/test-results/
 packages/frontend/*.tsbuildinfo

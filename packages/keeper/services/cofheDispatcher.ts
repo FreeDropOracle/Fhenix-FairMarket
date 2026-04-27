@@ -101,7 +101,7 @@ export class LocalCofheBatchClient implements FheosBatchClient {
         amountHandle: job.amountHandle,
         winner: winner?.bidder ?? null,
         winnerCiphertext: winner?.encryptedBid ?? ZERO_HASH,
-        winningAmount: winner ? decodeEncryptedUint32(winner.encryptedBid) : 0n,
+        winningAmount: winner ? decodeEncryptedNumeric(winner.encryptedBid) : 0n,
         latencyMs: this.now() - startedAt,
         avsProof: buildSyntheticAvsProof(job.requestId, winner?.encryptedBid ?? ZERO_HASH)
       };
@@ -249,15 +249,23 @@ export class CofheDispatcher {
 }
 
 export const ZERO_HASH = `0x${"0".repeat(64)}`;
+const CIPHERTEXT_KIND_SHIFT = 248n;
+const CIPHERTEXT_PAYLOAD_MASK = (1n << 248n) - 1n;
+const EUINT32_KIND = 1n;
+const EUINT96_KIND = 3n;
 
-export function decodeEncryptedUint32(ciphertext: string): bigint {
+export function decodeEncryptedNumeric(ciphertext: string): bigint {
   const parsed = BigInt(ciphertext);
-  const kind = parsed >> 248n;
-  if (kind !== 1n) {
+  const kind = parsed >> CIPHERTEXT_KIND_SHIFT;
+  if (kind !== EUINT32_KIND && kind !== EUINT96_KIND) {
     throw new Error(`Unsupported ciphertext kind: ${kind.toString()}`);
   }
 
-  return parsed & ((1n << 248n) - 1n);
+  return parsed & CIPHERTEXT_PAYLOAD_MASK;
+}
+
+export function decodeEncryptedUint32(ciphertext: string): bigint {
+  return decodeEncryptedNumeric(ciphertext);
 }
 
 export function pickHighestEncryptedBid(
@@ -268,7 +276,7 @@ export function pickHighestEncryptedBid(
   let highestBid = -1n;
 
   for (const bid of bids) {
-    const amount = decodeEncryptedUint32(bid.encryptedBid);
+    const amount = decodeEncryptedNumeric(bid.encryptedBid);
     if (amount > bid.availableEscrow) {
       continue;
     }

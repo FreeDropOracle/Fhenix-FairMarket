@@ -9,8 +9,8 @@ function getButtonStateLabel(input: ReturnType<typeof useWallet>) {
   if (!input.isClient) {
     return {
       tone: "neutral",
-      label: "Preparing shell",
-      value: "Initializing",
+      label: "Loading wallet",
+      value: "Starting",
       actionLabel: "Wait"
     } as const;
   }
@@ -193,7 +193,7 @@ export function ConnectWalletButton() {
                 <strong>{wallet.account}</strong>
               </div>
               <div className="wallet-panel__metric">
-                <span>Network posture</span>
+                <span>Network</span>
                 <strong>{wallet.isSupportedNetwork ? "Ready on Sepolia" : "Wrong network detected"}</strong>
               </div>
             </div>

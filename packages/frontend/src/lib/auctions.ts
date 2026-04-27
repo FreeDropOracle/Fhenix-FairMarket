@@ -78,8 +78,8 @@ const auctionSeed: AuctionRecord[] = [
     escrowLabel: "11.80 ETH escrow locked",
     timeLabel: "03h 41m left",
     synopsis:
-      "High-signal vault relic prepared for confidential bidding with strong seller posture and immediate Sepolia readiness.",
-    settlementNote: "CoFHE request will dispatch as soon as the end window closes.",
+      "A high-interest vault relic prepared for confidential bidding with clear terms and strong seller coverage.",
+    settlementNote: "Settlement begins as soon as the bidding window closes.",
     visual: {
       halo: "rgba(141, 107, 255, 0.72)",
       beam: "rgba(84, 150, 255, 0.92)",
@@ -88,18 +88,18 @@ const auctionSeed: AuctionRecord[] = [
     metrics: [
       { label: "Bid slots", value: "18 lanes" },
       { label: "Participants", value: "07 active" },
-      { label: "Settlement", value: "AVS armed" }
+      { label: "Settlement", value: "Protected close" }
     ],
     nextActions: ["Lock escrow", "Place confidential bid", "Review lot details"],
     timeline: [
       { label: "Asset intake", value: "NFT custody verified", tone: "success" },
       { label: "Auction state", value: "Open for encrypted bids", tone: "success" },
-      { label: "Settlement posture", value: "AVS relay ready on close", tone: "warning" }
+      { label: "Settlement", value: "Ready when bidding closes", tone: "warning" }
     ],
     protocolSignals: [
       "Seller deposit confirmed on Sepolia.",
       "Escrow coverage exceeds the opening bid by 3.68x.",
-      "Keepers already tracking this close window."
+      "Closing time is already being tracked."
     ],
     activityScore: 18,
     escrowScore: 11.8,
@@ -132,16 +132,16 @@ const auctionSeed: AuctionRecord[] = [
       { label: "Participants", value: "05 active" },
       { label: "Settlement", value: "Keeper tracked" }
     ],
-    nextActions: ["Expand escrow", "Place confidential bid", "Watch settlement queue"],
+    nextActions: ["Add more escrow", "Place confidential bid", "Wait for settlement"],
     timeline: [
       { label: "Asset intake", value: "Metadata synced", tone: "success" },
       { label: "Auction state", value: "Accepting encrypted bids", tone: "success" },
-      { label: "Settlement posture", value: "Dispatch on standby", tone: "neutral" }
+      { label: "Settlement", value: "Ready when bidding closes", tone: "neutral" }
     ],
     protocolSignals: [
       "Opening bid remains below current total escrow coverage.",
       "Wallet flow is Sepolia-only for first release.",
-      "Auction desk already published to keeper queue."
+      "Closing time is already monitored."
     ],
     activityScore: 12,
     escrowScore: 8.6,
@@ -162,7 +162,7 @@ const auctionSeed: AuctionRecord[] = [
     escrowLabel: "6.42 ETH escrow locked",
     timeLabel: "Keeper resolving now",
     synopsis:
-      "The bid window has closed and the lot is now traveling through the CoFHE plus AVS resolution path.",
+      "The bid window has closed and the lot is now moving through confidential settlement.",
     settlementNote: "Refunds and seller proceeds stay locked until the proof comes back.",
     visual: {
       halo: "rgba(101, 255, 207, 0.64)",
@@ -171,18 +171,18 @@ const auctionSeed: AuctionRecord[] = [
     },
     metrics: [
       { label: "Bid lanes", value: "09 sealed" },
-      { label: "Proof stage", value: "AVS relay" },
+      { label: "Settlement stage", value: "Verification in progress" },
       { label: "Fallback", value: "Armed" }
     ],
-    nextActions: ["Monitor settlement", "Review proof posture", "Prepare claims"],
+    nextActions: ["Monitor settlement", "Review settlement details", "Prepare claims"],
     timeline: [
       { label: "Asset intake", value: "Custody secured", tone: "success" },
-      { label: "Auction state", value: "Resolving through AVS", tone: "warning" },
-      { label: "Settlement posture", value: "Fallback timer armed", tone: "warning" }
+      { label: "Auction state", value: "Resolving now", tone: "warning" },
+      { label: "Settlement", value: "Fallback timer armed", tone: "warning" }
     ],
     protocolSignals: [
       "Finalization request already recorded on-chain.",
-      "Encrypted winner determination is pending proof return.",
+      "Winner selection remains confidential until settlement completes.",
       "Keeper reward becomes claimable after completion."
     ],
     activityScore: 9,
@@ -220,7 +220,7 @@ const auctionSeed: AuctionRecord[] = [
     timeline: [
       { label: "Asset intake", value: "Custody completed", tone: "success" },
       { label: "Auction state", value: "Finalized on-chain", tone: "success" },
-      { label: "Settlement posture", value: "Claims available", tone: "success" }
+      { label: "Settlement", value: "Claims available", tone: "success" }
     ],
     protocolSignals: [
       "Seller proceeds released only after proof verification.",
@@ -258,11 +258,11 @@ const auctionSeed: AuctionRecord[] = [
       { label: "Seller slash", value: "Triggered" },
       { label: "Settlement", value: "Voided" }
     ],
-    nextActions: ["Claim refund", "Inspect protocol status", "Review fallback notes"],
+    nextActions: ["Claim refund", "Open portfolio", "Review fallback notes"],
     timeline: [
       { label: "Asset intake", value: "Custody reversed", tone: "warning" },
       { label: "Auction state", value: "Voided through fallback", tone: "danger" },
-      { label: "Settlement posture", value: "Refund route unlocked", tone: "success" }
+      { label: "Settlement", value: "Refund route unlocked", tone: "success" }
     ],
     protocolSignals: [
       "The no-winner branch forced a zero winning amount.",
@@ -300,16 +300,16 @@ const auctionSeed: AuctionRecord[] = [
       { label: "Participants", value: "11 active" },
       { label: "Settlement", value: "Priority close" }
     ],
-    nextActions: ["Place confidential bid", "Track close window", "Review opening posture"],
+    nextActions: ["Place confidential bid", "Track close window", "Review auction details"],
     timeline: [
       { label: "Asset intake", value: "Ready", tone: "success" },
       { label: "Auction state", value: "High-traffic active desk", tone: "success" },
-      { label: "Settlement posture", value: "Next keeper priority", tone: "warning" }
+      { label: "Settlement", value: "Closing soon", tone: "warning" }
     ],
     protocolSignals: [
       "Active bidder count is highest in the current batch.",
       "Escrow coverage remains above the opening bid by 3.01x.",
-      "Designed to stress the Phase 5 marketplace experience."
+      "This lot is expected to stay busy until close."
     ],
     activityScore: 23,
     escrowScore: 16.9,
@@ -394,9 +394,9 @@ export function getMarketplaceStats(records: AuctionRecord[]) {
       note: "Visible liquidity already locked into the sealed-bid surface."
     },
     {
-      label: "AVS posture",
+      label: "Resolving now",
       value: `${resolvingCount} resolving`,
-      note: "Keepers and proof relays are already monitoring close windows."
+      note: "These auctions are already moving through settlement."
     },
     {
       label: "Live actions",
@@ -505,7 +505,7 @@ export function getUserOperations(): UserOperationRecord {
         id: "activity-002",
         timestamp: "18m ago",
         title: "Resolution request dispatched",
-        detail: "Zero-Knowledge Bloom moved from ACTIVE to RESOLVING and is now waiting for AVS proof return.",
+        detail: "Zero-Knowledge Bloom moved from ACTIVE to RESOLVING and is now waiting for settlement to finish.",
         tone: "warning"
       },
       {
@@ -519,7 +519,7 @@ export function getUserOperations(): UserOperationRecord {
         id: "activity-004",
         timestamp: "3h ago",
         title: "Fallback void completed",
-        detail: "Parallax Axiom exceeded its settlement window and moved into deterministic refund posture.",
+        detail: "Parallax Axiom exceeded its settlement window and moved into a clear refund state.",
         tone: "danger"
       }
     ]

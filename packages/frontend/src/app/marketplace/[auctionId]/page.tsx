@@ -81,7 +81,7 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
 
       <section className="detail-grid">
         <article className="detail-card">
-          <p className="eyebrow">Auction posture</p>
+          <p className="eyebrow">Auction details</p>
           <div className="detail-stack">
             <div>
               <span className="detail-label">Seller</span>
@@ -102,7 +102,7 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
         </article>
 
         <article className="detail-card">
-          <p className="eyebrow">Protocol timeline</p>
+          <p className="eyebrow">Timeline</p>
           <div className="timeline-list">
             {auction.timeline.map((entry) => (
               <div key={entry.label} className="timeline-row">
@@ -139,7 +139,7 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
         </article>
 
         <article className="detail-card">
-          <p className="eyebrow">Protocol signals</p>
+          <p className="eyebrow">Auction notes</p>
           <ul className="signal-list">
             {auction.protocolSignals.map((signal) => (
               <li key={signal}>{signal}</li>

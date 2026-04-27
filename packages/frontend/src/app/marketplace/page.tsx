@@ -65,11 +65,10 @@ export default async function MarketplacePage({ searchParams }: MarketplacePageP
     <main className="page-grid marketplace-shell">
       <section className="marketplace-hero">
         <div className="marketplace-hero__copy">
-          <p className="eyebrow">Live Auctions Terminal</p>
-          <h1 className="hero-title marketplace-hero__title">Confidential auction desks, without the noise.</h1>
+          <p className="eyebrow">Marketplace</p>
+          <h1 className="hero-title marketplace-hero__title">Confidential auctions, without the noise.</h1>
           <p className="hero-summary">
-            This surface is focused on execution: browse lots, inspect settlement posture, and move toward
-            escrow or bidding without dragging the user through protocol theory.
+            Browse lots, inspect each auction clearly, and move toward escrow or bidding without extra clutter.
           </p>
           <div className="hero-actions">
             <Link className="primary-action" href="/marketplace/create">
@@ -151,8 +150,7 @@ export default async function MarketplacePage({ searchParams }: MarketplacePageP
             <StatusPill label="No lots in this slice" tone="warning" />
             <h2 className="placeholder-title">This desk is quiet right now.</h2>
             <p className="placeholder-copy">
-              Shift the state filter or open the create-auction route to keep building the next confidential
-              listing surface.
+              Change the filter or create a new confidential auction to see more activity here.
             </p>
             <div className="hero-actions">
               <Link className="secondary-action" href="/marketplace">

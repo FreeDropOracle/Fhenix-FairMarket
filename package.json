@@ -13,6 +13,7 @@
     "coverage": "pnpm --filter contracts coverage",
     "phase6:deploy:adapter:sepolia": "pnpm --dir packages/contracts exec hardhat run deploy/00_deploy_adapters.ts --network sepolia",
     "phase6:deploy:core:sepolia": "pnpm --dir packages/contracts exec hardhat run deploy/01_deploy_core_proxy.ts --network sepolia",
+    "phase6:upgrade:core:sepolia": "pnpm --dir packages/contracts exec hardhat run deploy/05_upgrade_core_proxy.ts --network sepolia",
     "phase6:export:sepolia": "pnpm --dir packages/contracts exec hardhat run deploy/02_export_runtime_config.ts --network sepolia",
     "phase6:smoke:sepolia": "pnpm --dir packages/contracts exec hardhat run deploy/04_smoke_test.ts --network sepolia",
     "phase6:verify:sepolia": "pnpm --dir packages/contracts exec hardhat run deploy/03_verify_deployment.ts --network sepolia",

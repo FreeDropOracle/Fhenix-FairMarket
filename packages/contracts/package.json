@@ -13,6 +13,7 @@
     "coverage": "hardhat coverage",
     "deploy:adapter": "hardhat run deploy/00_deploy_adapters.ts",
     "deploy:core": "hardhat run deploy/01_deploy_core_proxy.ts",
+    "upgrade:core": "hardhat run deploy/05_upgrade_core_proxy.ts",
     "export:runtime": "hardhat run deploy/02_export_runtime_config.ts",
     "verify:deployment": "hardhat run deploy/03_verify_deployment.ts",
     "smoke:deployment": "hardhat run deploy/04_smoke_test.ts",

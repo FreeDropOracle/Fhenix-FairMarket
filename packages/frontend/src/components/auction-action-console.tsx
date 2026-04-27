@@ -108,7 +108,11 @@ function formatEthFromWeiString(value: string) {
   return `${Number.parseFloat(formatEther(BigInt(value))).toFixed(4)} ETH`;
 }
 
-function getPostureMessage(state: AuctionState, isLiveAuction: boolean) {
+function isEnded(endTimeUnix: number) {
+  return endTimeUnix <= Math.floor(Date.now() / 1000);
+}
+
+function getPostureMessage(state: AuctionState, isLiveAuction: boolean, closeWindowReached: boolean) {
   switch (state) {
     case "resolving":
       return "Bid entry is closed. This lot is already moving through the async settlement path.";
@@ -120,6 +124,10 @@ function getPostureMessage(state: AuctionState, isLiveAuction: boolean) {
       return "This lot already moved into fallback. Refund actions are now the safest route.";
     case "active":
     default:
+      if (closeWindowReached) {
+        return "The bidding window already ended. Start settlement from the dedicated controls before expecting a winner or asset release.";
+      }
+
       return isLiveAuction
         ? "This lot is open for real on-chain escrow locking right now."
         : "This lot is open for escrow staging and confidential bidding.";
@@ -151,7 +159,8 @@ export function AuctionActionConsole({
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
   const [stages, setStages] = useState<ActionStage[]>(buildStages(escrowStages, null));
   const isLiveAuction = Boolean(onChain);
-  const isAuctionActive = auctionState === "active";
+  const closeWindowReached = Boolean(onChain && isEnded(onChain.endTimeUnix));
+  const isAuctionActive = auctionState === "active" && !closeWindowReached;
   const needsWallet = !wallet.hasProvider || !wallet.isConnected || !wallet.isSupportedNetwork;
   const marketReady = isAddressLike(appConfig.contracts.marketProxyAddress);
   const walletEscrowLabel = !wallet.hasProvider
@@ -440,7 +449,7 @@ export function AuctionActionConsole({
             </div>
           </div>
 
-          <p className="detail-copy">{getPostureMessage(auctionState, isLiveAuction)}</p>
+          <p className="detail-copy">{getPostureMessage(auctionState, isLiveAuction, closeWindowReached)}</p>
 
           {needsWallet ? (
             <div className="action-console__gate">
@@ -475,6 +484,8 @@ export function AuctionActionConsole({
                     ? "This lot is finalized. Claims and history are now more relevant than bidding."
                     : auctionState === "cancelled"
                       ? "This lot was cancelled by the seller. Claim actions are now more relevant than bidding."
+                      : auctionState === "active" && closeWindowReached
+                        ? "The close window is over. Escrow and bid entry are closed until settlement is triggered."
                     : "This lot already entered fallback and new bidding is permanently closed."}
               </p>
             </div>

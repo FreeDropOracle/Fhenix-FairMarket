@@ -58,6 +58,7 @@ type LiveAuctionPhase2 = {
   createdAt: bigint;
   sellerClaimed: boolean;
   totalEscrow: bigint;
+  winner: string;
 };
 
 let cachedProvider: JsonRpcProvider | null = null;
@@ -138,6 +139,10 @@ function formatRemainingTime(endTime: bigint, state: AuctionState) {
   return `Ends ${formatUtcTimestamp(endTime)}`;
 }
 
+function hasCloseWindowEnded(endTime: bigint) {
+  return Number(endTime) <= Math.floor(Date.now() / 1000);
+}
+
 function getAuctionSynopsis(state: AuctionState, collectionLabel: string) {
   switch (state) {
     case "resolving":
@@ -170,7 +175,7 @@ function getSettlementNote(state: AuctionState) {
   }
 }
 
-function getNextActions(state: AuctionState) {
+function getNextActions(state: AuctionState, hasEnded: boolean) {
   switch (state) {
     case "resolving":
       return ["Monitor settlement", "Review lot details", "Prepare post-settlement claims"];
@@ -182,45 +187,50 @@ function getNextActions(state: AuctionState) {
       return ["Claim seller deposit", "Claim refund", "Return to marketplace"];
     case "active":
     default:
-      return ["Lock escrow", "Place confidential bid", "Review lot details"];
+      return hasEnded
+        ? ["Start settlement", "Refresh lot state", "Review lot details"]
+        : ["Lock escrow", "Review lot details", "Prepare settlement"];
   }
 }
 
-function getProtocolSignals(state: AuctionState, sellerDeposit: bigint, totalEscrow: bigint, bidCount: bigint) {
-  const sellerDepositLabel = formatEthLabel(sellerDeposit);
-  const totalEscrowLabel = formatEthLabel(totalEscrow);
-
+function getProtocolSignals(state: AuctionState, bidCount: bigint, hasEnded: boolean) {
   switch (state) {
     case "resolving":
       return [
-        `${sellerDepositLabel} seller deposit remains locked during settlement.`,
-        `${totalEscrowLabel} bidder escrow is now waiting on the resolution path.`,
+        "The close window is over and the resolution proof is now in-flight.",
+        "The public desk hides live escrow magnitudes during sealed-bid settlement.",
         `${bidCount.toString()} confidential bid lane(s) were recorded before the close window ended.`
       ];
     case "finalized":
       return [
         "The winner and payout path are already fixed on chain.",
-        `${sellerDepositLabel} seller deposit has already served its settlement role.`,
+        "The public desk stays focused on settlement state instead of exposing private auction sizing.",
         `${bidCount.toString()} confidential bid lane(s) fed into the final outcome.`
       ];
     case "voided":
       return [
         "Fallback protections are now more relevant than new bidding activity.",
-        `${sellerDepositLabel} seller-side economic protection is still reflected on chain.`,
-        `${totalEscrowLabel} bidder escrow is now routed toward refunds or guarded recovery.`
+        "Seller-side economic protection is still reflected on chain.",
+        "Refund routes stay available without surfacing escrow magnitudes here."
       ];
     case "cancelled":
       return [
         "The NFT already left escrow and returned to the seller during cancellation.",
-        `${sellerDepositLabel} seller deposit is now claimable only after the cancellation payout is computed.`,
-        `${totalEscrowLabel} bidder escrow can now move through the refund path.`
+        "The seller deposit is now claimable only after the cancellation payout is computed.",
+        "Bidder escrow can now move through the refund path."
       ];
     case "active":
     default:
       return [
-        `${sellerDepositLabel} seller deposit is already locked on chain.`,
-        `${totalEscrowLabel} bidder escrow is currently staged in the auction.`,
-        `${bidCount.toString()} confidential bid lane(s) have been recorded so far.`
+        hasEnded
+          ? "The bidding clock is over, but settlement has not been triggered yet."
+          : "Seller protection is already locked on chain.",
+        hasEnded
+          ? "The next safe step is to start settlement from the auction details page."
+          : "The public desk intentionally hides live escrow magnitudes for sealed-bid lots.",
+        bidCount > 0n
+          ? `${bidCount.toString()} confidential bid lane(s) are already recorded on chain.`
+          : "No on-chain confidential bid has been recorded yet."
       ];
   }
 }
@@ -246,6 +256,8 @@ function buildTimeline(
   bidCount: bigint,
   lastBlockTimestamp: bigint
 ) {
+  const hasEnded = state === "active" && hasCloseWindowEnded(endTime);
+
   return [
     {
       label: "Asset intake",
@@ -259,7 +271,9 @@ function buildTimeline(
       label: "Auction state",
       tone:
         state === "active"
-          ? ("success" as const)
+          ? hasEnded
+            ? ("warning" as const)
+            : ("success" as const)
           : state === "resolving" || state === "cancelled"
             ? ("warning" as const)
             : state === "finalized"
@@ -267,7 +281,9 @@ function buildTimeline(
               : ("danger" as const),
       value:
         state === "active"
-          ? `Bidding stays open until ${formatUtcTimestamp(endTime)}`
+          ? hasEnded
+            ? "The close window is over and settlement still needs to be triggered."
+            : `Bidding stays open until ${formatUtcTimestamp(endTime)}`
           : state === "resolving"
             ? "Bidding closed and settlement is currently in-flight."
             : state === "cancelled"
@@ -293,19 +309,52 @@ function buildLiveAuctionRecord(
   sellerPayout: bigint
 ): AuctionRecord {
   const state = mapLiveAuctionState(core.state);
-  const sellerDepositLabel = formatEthLabel(core.sellerDeposit);
-  const totalEscrowLabel = formatEthLabel(phase2.totalEscrow);
+  const hasEnded = state === "active" && hasCloseWindowEnded(core.endTime);
   const lotLabel = `Lot #${auctionId} / token ${core.tokenId.toString()}`;
   const formatLabel = core.isVickrey ? "Vickrey sealed bid" : "Confidential auction";
+  const openingBidLabel =
+    startingPrice > 0n
+      ? "Confidential floor configured"
+      : state === "active"
+        ? "No public opening bid"
+        : "Opening price remained private";
+  const publicEscrowLabel =
+    state === "active"
+      ? hasEnded
+        ? "Close window reached. Settlement can start now."
+        : phase2.bidCount > 0n
+          ? "Confidential participation recorded"
+          : "No public bidder activity"
+      : state === "resolving"
+        ? "Confidential settlement in progress"
+        : state === "finalized"
+          ? "Settlement complete"
+          : state === "cancelled"
+            ? "Seller cancellation path active"
+            : "Fallback recovery path active";
+  const sellerCoverageMetric =
+    state === "active" || state === "resolving"
+      ? "Locked"
+      : state === "cancelled"
+        ? "Released"
+        : formatEthLabel(core.sellerDeposit);
+  const bidLaneMetric =
+    state === "active" && phase2.bidCount === 0n
+      ? "Private"
+      : phase2.bidCount > 0n
+        ? `${phase2.bidCount.toString()} recorded`
+        : "0";
 
   return {
     activityScore: Number(phase2.bidCount),
     collection: collectionName,
-    confidentialityLabel: core.isVickrey ? "Encrypted Vickrey lane active" : "Confidential bidding lane active",
-    escrowLabel:
-      phase2.totalEscrow > 0n
-        ? `${totalEscrowLabel} bidder escrow staged`
-        : `${sellerDepositLabel} seller deposit locked`,
+    confidentialityLabel:
+      state === "active" && hasEnded
+        ? "Close window reached"
+        : core.isVickrey
+          ? "Encrypted Vickrey lane active"
+          : "Confidential bidding lane active",
+    escrowLabel: publicEscrowLabel,
     escrowScore: Number.parseFloat(formatEther(core.sellerDeposit + phase2.totalEscrow)),
     formatLabel,
     freshnessScore: Number(phase2.createdAt),
@@ -313,30 +362,38 @@ function buildLiveAuctionRecord(
     lotLabel,
     metrics: [
       { label: "Token", value: `#${core.tokenId.toString()}` },
-      { label: "Seller deposit", value: sellerDepositLabel },
-      { label: "Bid lanes", value: phase2.bidCount.toString() }
+      { label: "Seller coverage", value: sellerCoverageMetric },
+      { label: "Bid lanes", value: bidLaneMetric }
     ],
-    nextActions: getNextActions(state),
+    nextActions: getNextActions(state, hasEnded),
     openingBidAmount: 0,
-    openingBidLabel: startingPrice > 0n ? "Confidential floor configured" : "No public opening bid",
+    openingBidLabel,
     onChain: {
       auctionId,
+      assetClaimed: phase2.assetClaimed,
       bidCount: Number(phase2.bidCount),
       endTimeUnix: Number(core.endTime),
       nftContractAddress: core.nftContract,
-      sellerClaimed: false,
+      sellerClaimed: phase2.sellerClaimed,
       sellerDepositWei: core.sellerDeposit.toString(),
       sellerPayoutWei: sellerPayout.toString(),
       tokenId: core.tokenId.toString(),
-      totalEscrowWei: phase2.totalEscrow.toString()
+      totalEscrowWei: phase2.totalEscrow.toString(),
+      winnerAddress: phase2.winner
     },
-    protocolSignals: getProtocolSignals(state, core.sellerDeposit, phase2.totalEscrow, phase2.bidCount),
+    protocolSignals: getProtocolSignals(state, phase2.bidCount, hasEnded),
     seller: core.seller,
     sellerTag: `${formatAddress(core.nftContract)} on Sepolia`,
-    settlementNote: getSettlementNote(state),
+    settlementNote:
+      state === "active" && hasEnded
+        ? "The close window is over. Start settlement now so the keeper and AVS path can determine a winner or a no-winner result."
+        : getSettlementNote(state),
     state,
-    synopsis: getAuctionSynopsis(state, collectionName),
-    timeLabel: formatRemainingTime(core.endTime, state),
+    synopsis:
+      state === "active" && hasEnded
+        ? `${collectionName} has passed its bidding window and now needs a settlement trigger before a winner or no-winner outcome can be finalized.`
+        : getAuctionSynopsis(state, collectionName),
+    timeLabel: state === "active" && hasEnded ? "Close window reached" : formatRemainingTime(core.endTime, state),
     timeline: buildTimeline(state, phase2.createdAt, core.endTime, phase2.bidCount, core.lastBlockTimestamp),
     title: `Auction #${auctionId}`,
     visual: buildVisual(auctionId)
@@ -368,7 +425,8 @@ async function loadLiveAuctionRecord(auctionId: number): Promise<AuctionRecord |
       bidCount: 0n,
       createdAt: 0n,
       sellerClaimed: false,
-      totalEscrow: 0n
+      totalEscrow: 0n,
+      winner: "0x0000000000000000000000000000000000000000"
     };
 
     const [phase2Settled, startingPriceSettled, collectionName, sellerPayoutSettled] = await Promise.all([
@@ -378,7 +436,8 @@ async function loadLiveAuctionRecord(auctionId: number): Promise<AuctionRecord |
           bidCount: result.bidCount as bigint,
           createdAt: result.createdAt as bigint,
           sellerClaimed: result.sellerClaimed as boolean,
-          totalEscrow: result.totalEscrow as bigint
+          totalEscrow: result.totalEscrow as bigint,
+          winner: result.winner as string
         }))
         .catch(() => phase2Defaults),
       withTimeout(market.getAuctionStartingPrice(auctionId)).catch(() => 0n),
@@ -393,10 +452,6 @@ async function loadLiveAuctionRecord(auctionId: number): Promise<AuctionRecord |
       collectionName,
       sellerPayoutSettled as bigint
     );
-    if (record.onChain) {
-      record.onChain.sellerClaimed = phase2Settled.sellerClaimed;
-    }
-
     return record;
   } catch {
     return null;

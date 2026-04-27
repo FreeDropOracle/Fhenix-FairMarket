@@ -1,30 +1,28 @@
 import { appConfig } from "@/lib/app-config";
 import { HeroCrest } from "@/components/brand-lockup";
-import { HeroRuntimeSignals } from "@/components/hero-runtime-signals";
-import { ReadinessPanel } from "@/components/readiness-panel";
 import { RouteCard } from "@/components/route-card";
 
 const routeCards = [
   {
     href: "/marketplace",
-    kicker: "Execution Surface",
-    title: "Live Auctions Terminal",
-    description: "Marketplace listing, state-aware auction cards, and detailed views are now the active build surface.",
-    badge: "Auctions live"
+    kicker: "Marketplace",
+    title: "Confidential auctions",
+    description: "Browse active lots, inspect each auction clearly, and move toward escrow or bidding from one place.",
+    badge: "Open now"
   },
   {
     href: "/portfolio",
-    kicker: "User Operations",
-    title: "Claim & Settlement Hub",
-    description: "A single place for participations, refunds, seller proceeds, and asset claims.",
-    badge: "Claims ready"
+    kicker: "Portfolio",
+    title: "Claims and activity",
+    description: "Follow your auctions, claim what is yours, and keep recent actions within reach.",
+    badge: "Personal view"
   },
   {
     href: "/governance",
-    kicker: "Protocol Trust",
-    title: "Safety Dead-man's Switch",
-    description: "Status, governance posture, and delayed-settlement messaging will live here.",
-    badge: "Reliability live"
+    kicker: "Support",
+    title: "Recovery guidance",
+    description: "If settlement takes longer than expected, this route explains the next safe action in plain language.",
+    badge: "Help route"
   }
 ] as const;
 
@@ -39,31 +37,28 @@ export default function HomePage() {
             <HeroCrest />
           </div>
           <p className="hero-summary">
-            The public landing page introduces the protocol. This application layer focuses on execution:
-            wallet readiness, confidential bidding, escrow orchestration, and clear operational states.
+            Browse confidential auctions, manage claims, and move through each step with a calmer interface that
+            stays focused on the action in front of you.
           </p>
           <div className="hero-actions">
             <a className="primary-action" href="/marketplace">
-              Open Auction Desk
+              Open marketplace
             </a>
-            <a className="secondary-action" href={appConfig.docs.foundationUrl} rel="noreferrer" target="_blank">
-              Review Foundation
+            <a className="secondary-action" href="/portfolio">
+              Open portfolio
             </a>
           </div>
-          <HeroRuntimeSignals />
         </div>
       </section>
-
-      <ReadinessPanel />
 
       <section className="section-block">
         <div className="section-header">
           <div>
-            <p className="eyebrow">Operational Routes</p>
-            <h2 className="section-title">Execution surfaces are wired and named for users.</h2>
+            <p className="eyebrow">Core Routes</p>
+            <h2 className="section-title">Everything important stays one click away.</h2>
           </div>
           <p className="section-note">
-            The shell is stable. Each route now reads like a live service instead of an internal task tracker.
+            Choose the route that matches what you want to do now: browse, claim, or check what to do next.
           </p>
         </div>
         <div className="route-grid">

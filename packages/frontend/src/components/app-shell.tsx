@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 
 import { BrandWordmark } from "@/components/brand-lockup";
 import { ConnectWalletButton } from "@/components/connect-wallet-button";
-import { SystemHealthBar } from "@/components/system-health-bar";
 import { appRoutes } from "@/lib/app-config";
 
 export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -44,8 +43,6 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           </nav>
           <ConnectWalletButton />
         </header>
-
-        <SystemHealthBar />
 
         <main className="shell-main" id="main-content" tabIndex={-1}>
           {children}

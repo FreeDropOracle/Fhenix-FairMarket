@@ -35,12 +35,12 @@ export function BrandLockup() {
       </div>
       <div className="brand-footnote">
         <div>
-          <strong>Phase 5 foundation</strong>
-          Wallet, shell, routing, readiness.
+          <strong>Confidential flow</strong>
+          Escrow first. Sealed bids next.
         </div>
         <div>
-          <strong>Sepolia gate</strong>
-          One network. Clear switching. No ambiguity.
+          <strong>Single-network release</strong>
+          Clear switching. No ambiguity.
         </div>
       </div>
     </aside>

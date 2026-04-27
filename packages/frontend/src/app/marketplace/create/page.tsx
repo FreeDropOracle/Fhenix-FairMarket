@@ -4,19 +4,19 @@ import { StatusPill } from "@/components/status-pill";
 
 const intakeChecklist = [
   "Select the NFT already approved for market custody.",
-  "Confirm the seller-side deposit posture.",
+  "Confirm the seller-side deposit amount.",
   "Choose a closing window that gives keepers enough time to finalize."
 ] as const;
 
 const configurationChecklist = [
   "Opening bid stays visible; bid values stay confidential.",
   "Sepolia is the only supported app network in this first release.",
-  "Settlement will route through the async CoFHE plus AVS path after close."
+  "Settlement continues privately after the auction closes."
 ] as const;
 
 const summarySignals = [
-  { label: "Custody posture", value: "NFT approval required before launch" },
-  { label: "Close route", value: "Keepers will trigger finalization on expiry" },
+  { label: "Custody", value: "NFT approval required before launch" },
+  { label: "Closing flow", value: "The auction closes automatically at expiry" },
   { label: "Claim surface", value: "Refunds, seller proceeds, and asset claims remain unified later" }
 ] as const;
 
@@ -25,11 +25,11 @@ export default function CreateAuctionPage() {
     <main className="page-grid create-shell">
       <section className="section-block create-hero">
         <div>
-          <p className="eyebrow">Auction Listing Console</p>
+          <p className="eyebrow">Create auction</p>
           <h1 className="section-title">Launch the next confidential lot without over-explaining it.</h1>
           <p className="section-note create-hero__copy">
-            This screen prepares the structure for the actual transaction flow. Escrow and confidential
-            submission surfaces are already reflected in the product shape.
+            Set the asset, the opening bid, and the closing window. The screen stays focused on the details the
+            seller actually needs.
           </p>
         </div>
         <div className="create-hero__actions">
@@ -116,10 +116,10 @@ export default function CreateAuctionPage() {
           </div>
           <div className="hero-actions">
             <button className="primary-action create-launch-button" type="button" disabled>
-              Transaction wiring follows the live action deck
+              Listing submission opens with wallet confirmation
             </button>
-            <Link className="secondary-action" href="/about">
-              Review foundation notes
+            <Link className="secondary-action" href="/portfolio">
+              Open portfolio
             </Link>
           </div>
         </article>

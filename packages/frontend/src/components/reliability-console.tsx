@@ -4,8 +4,6 @@ import Link from "next/link";
 
 import { StatusPill } from "@/components/status-pill";
 import { useWallet } from "@/components/wallet-provider";
-import { appConfig } from "@/lib/app-config";
-import { useRuntimeReadiness } from "@/hooks/use-runtime-readiness";
 import {
   mobileReadinessPoints,
   protocolSignals,
@@ -15,89 +13,45 @@ import {
 
 export function ReliabilityConsole() {
   const wallet = useWallet();
-  const runtime = useRuntimeReadiness();
-
-  const runtimeSignals = [
-    {
-      label: "Wallet session",
-      value: runtime.walletValue,
-      tone: runtime.walletTone,
-      note: runtime.walletNote
-    },
-    {
-      label: "Network posture",
-      value: wallet.isSupportedNetwork ? appConfig.chain.name : wallet.chainName ?? appConfig.chain.name,
-      tone: wallet.isConnected ? (wallet.isSupportedNetwork ? "success" : "warning") : "neutral",
-      note: wallet.isConnected
-        ? wallet.isSupportedNetwork
-          ? "The session is already on the release network."
-          : "The session is live but still off-network for this release."
-        : "The UI defaults to a Sepolia-only release posture."
-    },
-    {
-      label: "Contract registry",
-      value: runtime.registryLabel,
-      tone: runtime.registryTone,
-      note: runtime.registryNote
-    },
-    {
-      label: "Coprocessor bridge",
-      value: runtime.coprocessor.live ? appConfig.coprocessor.name : runtime.coprocessor.label,
-      tone: runtime.coprocessor.tone,
-      note: runtime.coprocessor.note
-    },
-    {
-      label: "AVS checkpoint",
-      value: runtime.avsLabel,
-      tone: runtime.avsTone,
-      note: runtime.avsNote
-    },
-    {
-      label: "Current route policy",
-      value: "Trust-first recovery",
-      tone: "neutral",
-      note: "When the system is delayed, the UI should show the next safe user action before exposing internal complexity."
-    }
-  ] as const;
 
   const primaryRecoveryState = !wallet.hasProvider
     ? {
         title: "Wallet not installed",
         tone: "danger" as const,
-        body: "Action routes should stay blocked and the user should be sent directly to wallet installation."
+        body: "The safest next step is to install a wallet before trying to bid, claim, or create an auction."
       }
     : !wallet.isConnected
       ? {
           title: "Wallet not connected",
           tone: "warning" as const,
-          body: "Connection is the next safe step before any escrow, bid, or claim route appears."
+          body: "Connect first, then the interface can unlock bidding, claims, and seller actions."
         }
       : !wallet.isSupportedNetwork
         ? {
             title: "Wrong network detected",
             tone: "warning" as const,
-            body: "The correct response is a one-click switch to Sepolia, not exposing unsupported actions."
+            body: "Switch to Sepolia before continuing so the action buttons stay reliable."
           }
         : {
-            title: "Session posture healthy",
+            title: "Session ready",
             tone: "success" as const,
-            body: "The runtime prerequisites for wallet and network are already satisfied."
+            body: "Wallet and network are aligned, so the next action can stay simple."
           };
 
   return (
     <main className="page-grid reliability-shell">
       <section className="reliability-hero">
         <div>
-          <p className="eyebrow">Safety Dead-man&apos;s Switch</p>
-          <h1 className="section-title">Protocol status, recovery language, and delayed-settlement trust.</h1>
+          <p className="eyebrow">Recovery guidance</p>
+          <h1 className="section-title">If something slows down, the next safe action stays clear.</h1>
           <p className="section-note reliability-hero__copy">
-            This route is where the product proves it can explain itself under stress: wrong network, missing
-            wallet, pending proof returns, and fallback transitions all need calm, deterministic guidance.
+            This route keeps support language calm and direct when a wallet is missing, the network is wrong, or an
+            auction takes longer than expected to settle.
           </p>
         </div>
 
         <article className="reliability-priority-card">
-          <span className="signal-label">Primary runtime recovery</span>
+          <span className="signal-label">Primary recovery step</span>
           <h2 className="reliability-priority-card__title">{primaryRecoveryState.title}</h2>
           <p className="reliability-priority-card__copy">{primaryRecoveryState.body}</p>
           <StatusPill
@@ -113,35 +67,10 @@ export function ReliabilityConsole() {
         </article>
       </section>
 
-      <section className="reliability-runtime-grid">
-        {runtimeSignals.map((signal) => (
-          <article key={signal.label} className="reliability-runtime-card">
-            <div className="reliability-runtime-card__head">
-              <span className="signal-label">{signal.label}</span>
-              <StatusPill
-                label={
-                  signal.tone === "success"
-                    ? "Ready"
-                    : signal.tone === "warning"
-                      ? "Watch"
-                : signal.tone === "danger"
-                  ? "Blocked"
-                  : "Standby"
-                }
-                tone={signal.tone}
-                pulse={signal.tone === "success"}
-              />
-            </div>
-            <strong className="reliability-runtime-card__value">{signal.value}</strong>
-            <p className="reliability-runtime-card__copy">{signal.note}</p>
-          </article>
-        ))}
-      </section>
-
       <section className="portfolio-grid">
         <article className="detail-card portfolio-section-card">
-          <p className="eyebrow">Protocol posture</p>
-          <h2 className="detail-title portfolio-section-card__title">Status signals users can trust</h2>
+          <p className="eyebrow">At a glance</p>
+          <h2 className="detail-title portfolio-section-card__title">Signals users can trust</h2>
           <div className="claims-list">
             {protocolSignals.map((signal) => (
               <article key={signal.label} className="claim-card">
@@ -166,44 +95,6 @@ export function ReliabilityConsole() {
                 <p className="claim-card__copy">{signal.note}</p>
               </article>
             ))}
-          </div>
-        </article>
-
-        <article className="detail-card portfolio-section-card">
-          <p className="eyebrow">Transparency links</p>
-          <h2 className="detail-title portfolio-section-card__title">External proof and coprocessor surfaces</h2>
-          <div className="claims-list">
-            <article className="claim-card">
-              <div className="claim-card__head">
-                <div>
-                  <span className="signal-label">Coprocessor reference</span>
-                  <h3 className="claim-card__title">{appConfig.coprocessor.name}</h3>
-                </div>
-                <StatusPill label={runtime.coprocessor.live ? "Live probe" : "Reference"} tone={runtime.coprocessor.tone} pulse={runtime.coprocessor.live} />
-              </div>
-              <p className="claim-card__copy">
-                Keep the privacy engine visible to the user, even when the live probe is still exposed through an
-                external public surface.
-              </p>
-              <a className="secondary-action portfolio-inline-action" href={appConfig.coprocessor.referenceUrl} rel="noreferrer" target="_blank">
-                Open Fhenix Coprocessor Stats
-              </a>
-            </article>
-            <article className="claim-card">
-              <div className="claim-card__head">
-                <div>
-                  <span className="signal-label">Foundation review</span>
-                  <h3 className="claim-card__title">Security and economic principles</h3>
-                </div>
-                <StatusPill label="Docs linked" tone="success" pulse />
-              </div>
-              <p className="claim-card__copy">
-                The recovery surface should always give the user a direct path to the canonical foundation notes.
-              </p>
-              <a className="secondary-action portfolio-inline-action" href={appConfig.docs.foundationUrl} rel="noreferrer" target="_blank">
-                Review foundation
-              </a>
-            </article>
           </div>
         </article>
       </section>
@@ -268,7 +159,7 @@ export function ReliabilityConsole() {
         </article>
 
         <article className="detail-card portfolio-section-card">
-          <p className="eyebrow">Mobile readiness</p>
+          <p className="eyebrow">Mobile experience</p>
           <h2 className="detail-title portfolio-section-card__title">Reliability on smaller screens</h2>
           <div className="reliability-mobile-grid">
             {mobileReadinessPoints.map((point) => (

@@ -1,40 +1,36 @@
-import { AppConfigSnapshot } from "@/components/app-config-snapshot";
-
 export default function AboutPage() {
   return (
     <main className="page-grid">
       <section className="section-block section-block--compact">
         <div className="section-header">
           <div>
-            <p className="eyebrow">Phase 5 Foundation</p>
-            <h1 className="section-title">Application posture</h1>
+            <p className="eyebrow">About the experience</p>
+            <h1 className="section-title">A cleaner way to move through confidential auctions.</h1>
           </div>
           <p className="section-note">
-            The public landing page stays separate. This package is the product shell that will host the
-            auction application itself.
+            This application keeps the flow direct: browse auctions, act when ready, and understand what comes next
+            without reading through protocol-heavy screens.
           </p>
         </div>
         <div className="about-grid">
           <article className="detail-card">
             <span className="detail-label">Design stance</span>
-            <h2 className="detail-title">Dark-first, premium, minimal guidance.</h2>
+            <h2 className="detail-title">Focused, calm, and readable.</h2>
             <p className="detail-copy">
-              We intentionally show only the information that matters at each step. The goal is a calm,
-              high-trust cryptographic product, not a documentation wall.
+              Only the information needed for the current decision stays visible. The goal is confidence and clarity,
+              not crowded screens.
             </p>
           </article>
           <article className="detail-card">
             <span className="detail-label">Wallet stance</span>
-            <h2 className="detail-title">Direct connection with a strict Sepolia guard.</h2>
+            <h2 className="detail-title">Direct connection with clear network guidance.</h2>
             <p className="detail-copy">
-              The foundation supports injected wallets, explicit network mismatch messaging, and direct
-              switch-to-Sepolia prompts from inside the shell.
+              Wallet actions stay straightforward, and the interface tells the user exactly when a network switch is
+              needed before continuing.
             </p>
           </article>
         </div>
       </section>
-
-      <AppConfigSnapshot />
     </main>
   );
 }

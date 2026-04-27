@@ -19,7 +19,7 @@ export function RouteCard({ href, kicker, title, description, badge }: RouteCard
       <div className="route-footer">
         <StatusPill label={badge} tone="neutral" />
         <Link className="route-link" href={href}>
-          Open route
+          Open
         </Link>
       </div>
     </article>

@@ -39,11 +39,6 @@ export const appConfig = {
       "https://cofhe-docs.fhenix.zone/get-started/introduction/compatibility",
     healthcheckUrl: readEnv("NEXT_PUBLIC_COPROCESSOR_HEALTHCHECK_URL"),
     mode: readEnv("NEXT_PUBLIC_COPROCESSOR_MODE") || "reference"
-  },
-  docs: {
-    foundationUrl:
-      readEnv("NEXT_PUBLIC_FOUNDATION_DOCS_URL") ||
-      "https://doc-fhenix-fair-market.vercel.app/overview#security-economic-principles"
   }
 } as const;
 

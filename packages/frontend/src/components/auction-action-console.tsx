@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useDeferredValue, useState } from "react";
+import { startTransition, useState } from "react";
 
 import { StatusPill, type StatusPillTone } from "@/components/status-pill";
 import { useWallet } from "@/components/wallet-provider";
@@ -86,18 +86,6 @@ function wait(ms: number) {
   });
 }
 
-function buildCiphertextPreview(input: string, auctionId: string) {
-  const seed = `${auctionId}:${input || "0"}`;
-  let rolling = 0;
-
-  for (let index = 0; index < seed.length; index += 1) {
-    rolling = (rolling * 31 + seed.charCodeAt(index)) >>> 0;
-  }
-
-  const chunk = rolling.toString(16).padStart(8, "0");
-  return `0x${chunk.repeat(8)}`;
-}
-
 function formatEth(value: number) {
   return `${value.toFixed(2)} ETH`;
 }
@@ -109,7 +97,7 @@ function getPostureMessage(state: AuctionState) {
     case "finalized":
       return "Settlement is complete. Claim and settlement surfaces are now the next safe route.";
     case "voided":
-      return "This lot already moved into fallback. Refund-facing actions will surface in the dashboard phase.";
+      return "This lot already moved into fallback. Refund actions are now the safest route.";
     case "active":
     default:
       return "This lot is open for escrow staging and confidential bidding.";
@@ -131,17 +119,13 @@ export function AuctionActionConsole({
   const [bidInput, setBidInput] = useState("0.85");
   const [stagedEscrow, setStagedEscrow] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
-  const [headline, setHeadline] = useState("Action lane ready");
-  const [note, setNote] = useState("Connect on Sepolia, then stage escrow to unlock the confidential bid path.");
+  const [headline, setHeadline] = useState("Choose your next action");
+  const [note, setNote] = useState("Connect on Sepolia, add escrow, then continue to a confidential bid.");
   const [notice, setNotice] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
   const [stages, setStages] = useState<ActionStage[]>(buildStages(escrowStages, null));
-  const deferredBidInput = useDeferredValue(bidInput);
-
-  const ciphertextPreview = buildCiphertextPreview(deferredBidInput, auctionId);
   const isAuctionActive = auctionState === "active";
   const needsWallet = !wallet.hasProvider || !wallet.isConnected || !wallet.isSupportedNetwork;
-  const executionMode = appConfig.contracts.ready ? "Execution wiring ready" : "Preview mode until deployment registry is configured";
 
   const resetStageRail = (nextMode: ActionMode) => {
     setStages(buildStages(nextMode === "escrow" ? escrowStages : bidStages, null));
@@ -154,11 +138,11 @@ export function AuctionActionConsole({
 
     startTransition(() => {
       setMode(nextMode);
-      setHeadline(nextMode === "escrow" ? "Escrow staging lane" : "Confidential bid lane");
+      setHeadline(nextMode === "escrow" ? "Add escrow first" : "Seal a confidential bid");
       setNote(
         nextMode === "escrow"
-          ? "lockEscrow(auctionId) is payable and must happen before any encrypted bid."
-          : "placeBid(auctionId, encryptedBid) only opens after escrow is staged."
+          ? "Escrow must be added before confidential bidding can open for this lot."
+          : "A confidential bid becomes available after you have enough escrow in place."
       );
       setNotice(null);
       resetStageRail(nextMode);
@@ -194,22 +178,22 @@ export function AuctionActionConsole({
     const amount = Number.parseFloat(escrowInput);
 
     if (!Number.isFinite(amount) || amount <= 0) {
-      setNotice("Enter a positive escrow amount before staging the lane.");
+      setNotice("Enter a positive escrow amount before continuing.");
       return;
     }
 
     setIsRunning(true);
     setNotice(null);
-    setHeadline("Escrow lock flow live");
-    setNote("Preparing the payable lockEscrow surface and transaction-state feedback.");
+    setHeadline("Adding escrow");
+    setNote("Preparing the escrow step and its confirmation trail.");
     setLastReceipt(null);
 
     try {
       await runStageSequence(escrowStages);
       setStagedEscrow((current) => current + amount);
-      setHeadline("Escrow staged successfully");
-      setNote("The confidential bid lane is now unlocked for this session preview.");
-      setLastReceipt(`Escrow preview complete for ${formatEth(amount)} on ${auctionTitle}.`);
+      setHeadline("Escrow added");
+      setNote("You can now continue to the confidential bid step for this lot.");
+      setLastReceipt(`Escrow prepared for ${formatEth(amount)} on ${auctionTitle}.`);
       startTransition(() => {
         setMode("bid");
       });
@@ -222,17 +206,17 @@ export function AuctionActionConsole({
     const amount = Number.parseFloat(bidInput);
 
     if (!Number.isFinite(amount) || amount <= 0) {
-      setNotice("Enter a positive bid amount before sealing the payload.");
+      setNotice("Enter a positive bid amount before continuing.");
       return;
     }
 
     if (stagedEscrow <= 0) {
-      setNotice("Stage escrow first. placeBid cannot open without an available escrow lane.");
+      setNotice("Add escrow first before continuing to a confidential bid.");
       return;
     }
 
     if (amount > stagedEscrow) {
-      setNotice("The bid preview cannot exceed the escrow you staged in this session.");
+      setNotice("Your bid cannot exceed the escrow you already added.");
       return;
     }
     if (amount < openingBidAmount) {
@@ -242,37 +226,29 @@ export function AuctionActionConsole({
 
     setIsRunning(true);
     setNotice(null);
-    setHeadline("Confidential bid flow live");
-    setNote("Packaging a client-side payload preview, then driving the placeBid state sequence.");
+    setHeadline("Sealing confidential bid");
+    setNote("Preparing the confidential bid and moving it through the submission steps.");
     setLastReceipt(null);
 
     try {
       await runStageSequence(bidStages);
-      setHeadline("Encrypted bid lane sealed");
-      setNote("The bid preview is now stored and ready for the asynchronous settlement route.");
-      setLastReceipt(`Confidential bid preview sealed for ${formatEth(amount)} with payload ${ciphertextPreview.slice(0, 18)}...`);
+      setHeadline("Confidential bid prepared");
+      setNote("Your bid is sealed and ready for the normal settlement path.");
+      setLastReceipt(`Confidential bid prepared for ${formatEth(amount)} on ${auctionTitle}.`);
     } finally {
       setIsRunning(false);
     }
   };
 
-  const actionPrimaryLabel =
-    mode === "escrow"
-      ? appConfig.contracts.ready
-        ? "Lock escrow"
-        : "Preview escrow lock"
-      : appConfig.contracts.ready
-        ? "Place encrypted bid"
-        : "Preview encrypted bid";
+  const actionPrimaryLabel = mode === "escrow" ? "Add escrow" : "Seal bid";
 
   return (
     <section className="action-console">
       <div className="section-header">
         <div>
-          <p className="eyebrow">Confidential Action Deck</p>
-          <h2 className="section-title">Escrow first. Confidential bid second. State feedback throughout.</h2>
+          <p className="eyebrow">Actions</p>
+          <h2 className="section-title">Escrow first. Confidential bid second.</h2>
         </div>
-        <StatusPill label={executionMode} tone={appConfig.contracts.ready ? "success" : "warning"} />
       </div>
 
       <div className="action-console__grid">
@@ -306,8 +282,8 @@ export function AuctionActionConsole({
               <strong>{escrowLabel}</strong>
             </div>
             <div className="action-console__stat">
-              <span>Your staged lane</span>
-              <strong>{stagedEscrow > 0 ? formatEth(stagedEscrow) : "No local staging yet"}</strong>
+              <span>Your available escrow</span>
+              <strong>{stagedEscrow > 0 ? formatEth(stagedEscrow) : "Nothing added yet"}</strong>
             </div>
           </div>
 
@@ -329,8 +305,8 @@ export function AuctionActionConsole({
                 {!wallet.hasProvider
                   ? "An injected wallet is required before the encrypted action lane can open."
                   : !wallet.isConnected
-                    ? "Connect a wallet first so the action desk can bind to your session."
-                    : "This action surface is Sepolia-only in the first release."}
+                    ? "Connect a wallet first before continuing."
+                    : "This action is currently available on Sepolia."}
               </p>
               <button className="primary-action action-console__cta" onClick={handleWalletCta} type="button">
                 {!wallet.hasProvider ? "Install wallet" : !wallet.isConnected ? "Connect wallet" : "Switch to Sepolia"}
@@ -341,9 +317,9 @@ export function AuctionActionConsole({
               <StatusPill label="Action lane closed" tone={auctionState === "voided" ? "danger" : "warning"} />
               <p className="detail-copy">
                 {auctionState === "resolving"
-                  ? "This lot already moved into resolving. New escrow or bids are blocked while the proof path runs."
+                  ? "This lot is already resolving. New escrow or bids stay closed until settlement finishes."
                   : auctionState === "finalized"
-                    ? "This lot is finalized. The next surface for it is claims and history, not bidding."
+                    ? "This lot is finalized. Claims and history are now more relevant than bidding."
                     : "This lot already entered fallback and new bidding is permanently closed."}
               </p>
             </div>
@@ -360,10 +336,6 @@ export function AuctionActionConsole({
                         onChange={(event) => setEscrowInput(event.target.value)}
                         value={escrowInput}
                       />
-                    </label>
-                    <label className="field-block">
-                      <span className="field-label">Contract method</span>
-                      <input className="field-input" readOnly value="lockEscrow(uint256 auctionId) payable" />
                     </label>
                   </div>
                   <p className="action-console__hint">
@@ -390,14 +362,9 @@ export function AuctionActionConsole({
                         value={bidInput}
                       />
                     </label>
-                    <label className="field-block">
-                      <span className="field-label">Encrypted payload preview</span>
-                      <input className="field-input" readOnly value={`${ciphertextPreview.slice(0, 16)}...${ciphertextPreview.slice(-8)}`} />
-                    </label>
                   </div>
                   <p className="action-console__hint">
-                    {confidentialityLabel}. The payload preview above models the client packaging step before real
-                    CoFHE wiring replaces it.
+                    {confidentialityLabel}. Add enough escrow first, then seal the bid amount you want to submit.
                   </p>
                   <button
                     className="primary-action action-console__cta"
@@ -422,10 +389,10 @@ export function AuctionActionConsole({
         <article className="detail-card action-console__card">
           <div className="action-console__execution-head">
             <div>
-              <p className="eyebrow">Execution rail</p>
+              <p className="eyebrow">Progress</p>
               <h3 className="detail-title action-console__execution-title">{headline}</h3>
             </div>
-            <StatusPill label={isRunning ? "Flow live" : "Standing by"} tone={isRunning ? "warning" : "neutral"} />
+            <StatusPill label={isRunning ? "In progress" : "Ready"} tone={isRunning ? "warning" : "neutral"} />
           </div>
 
           <p className="detail-copy">{note}</p>
@@ -448,14 +415,14 @@ export function AuctionActionConsole({
               <strong>{wallet.account ? formatAddress(wallet.account) : "No wallet bound"}</strong>
             </div>
             <div className="action-console__meta-card">
-              <span>Explorer route</span>
-              <strong>{appConfig.chain.blockExplorerUrl}</strong>
+              <span>Network</span>
+              <strong>{appConfig.chain.name}</strong>
             </div>
           </div>
 
           {lastReceipt ? (
             <div aria-live="polite" className="action-console__receipt" role="status">
-              <span>Latest preview receipt</span>
+              <span>Latest activity</span>
               <strong>{lastReceipt}</strong>
             </div>
           ) : null}

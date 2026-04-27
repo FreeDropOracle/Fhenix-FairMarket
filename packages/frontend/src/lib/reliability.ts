@@ -34,28 +34,28 @@ export type MobileReadinessPoint = {
 
 export const protocolSignals: ProtocolSignal[] = [
   {
-    label: "Settlement lane",
-    value: "CoFHE + AVS async path",
+    label: "Settlement",
+    value: "Confidential until completion",
     tone: "success",
-    note: "Winner determination stays confidential until proof-backed resolution returns."
+    note: "Winner selection stays hidden until the auction is fully resolved."
   },
   {
-    label: "Fallback posture",
-    value: "Deterministic void path",
+    label: "Fallback protection",
+    value: "Refunds remain explicit",
     tone: "warning",
-    note: "If the settlement window exceeds budget, refunds and seller slashing stay explicit and bounded."
+    note: "If settlement takes too long, the interface guides users toward refunds and the next safe step."
   },
   {
-    label: "Keeper mesh",
-    value: "Phase 4 monitoring online",
-    tone: "success",
-    note: "Automated finalization, dispatch, and proof submission already exist underneath the UI."
-  },
-  {
-    label: "Trust surface",
+    label: "Network policy",
     value: "Single-network release",
+    tone: "success",
+    note: "Keeping one supported network makes wallet guidance simpler and reduces avoidable mistakes."
+  },
+  {
+    label: "Claim flow",
+    value: "One place for outcomes",
     tone: "neutral",
-    note: "Sepolia-only support reduces user ambiguity while the product hardens."
+    note: "Claims, refunds, and seller proceeds stay grouped in the portfolio instead of scattering across screens."
   }
 ];
 
@@ -95,11 +95,11 @@ export const settlementScenarios: SettlementScenario[] = [
 export const recoveryPlaybooks: RecoveryPlaybook[] = [
   {
     id: "playbook-wallet",
-    title: "No injected wallet",
+    title: "No wallet detected",
     tone: "danger",
     trigger: "Wallet provider missing",
     action: "Install a wallet and reopen the session",
-    detail: "The UI must block sensitive actions immediately and steer the user toward wallet installation with no ambiguous buttons."
+    detail: "Sensitive actions should pause immediately and the next step should stay obvious."
   },
   {
     id: "playbook-network",
@@ -107,15 +107,7 @@ export const recoveryPlaybooks: RecoveryPlaybook[] = [
     tone: "warning",
     trigger: "Connected off-Sepolia",
     action: "Offer one-click switch to Sepolia",
-    detail: "The first release is intentionally single-network to reduce operational and user-facing ambiguity."
-  },
-  {
-    id: "playbook-registry",
-    title: "Deployment registry not configured",
-    tone: "warning",
-    trigger: "Frontend envs incomplete",
-    action: "Stay in preview mode and suppress on-chain execution buttons",
-    detail: "This protects the user from dead-end actions while contracts are not yet published into the frontend registry."
+    detail: "The interface should correct the network mismatch without making the user hunt for the right setting."
   },
   {
     id: "playbook-recovery",
@@ -140,7 +132,7 @@ export const mobileReadinessPoints: MobileReadinessPoint[] = [
   },
   {
     id: "mobile-status",
-    title: "Compact protocol posture",
-    detail: "Wallet, network, registry, and settlement posture remain visible without forcing long vertical hunting."
+    title: "Compact guidance",
+    detail: "The user should understand their next safe step without scrolling through extra technical panels."
   }
 ];

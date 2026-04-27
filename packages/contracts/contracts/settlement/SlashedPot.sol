@@ -14,12 +14,14 @@ contract SlashedPot is Ownable, ISlashedPot {
     }
 
     error CompensationAlreadyClaimed(uint256 auctionId, address recipient);
+    error CompensationKeyAlreadyClaimed(uint256 auctionId, bytes32 claimKey);
     error NativeTransferFailed(address recipient, uint256 amount);
     error NotMarket(address caller);
     error ZeroAddress();
 
     mapping(uint256 => Pot) private _pots;
     mapping(uint256 => mapping(address => bool)) public hasClaimedCompensation;
+    mapping(uint256 => mapping(bytes32 => bool)) public hasClaimedCompensationByKey;
 
     ISettlementEngine public immutable settlementEngine;
     address public market;
@@ -75,11 +77,34 @@ contract SlashedPot is Ownable, ISlashedPot {
         onlyMarket
         returns (uint256 amount)
     {
+        bytes32 claimKey = keccak256(abi.encodePacked(recipient));
         if (hasClaimedCompensation[auctionId][recipient]) {
             revert CompensationAlreadyClaimed(auctionId, recipient);
         }
+        if (hasClaimedCompensationByKey[auctionId][claimKey]) {
+            revert CompensationKeyAlreadyClaimed(auctionId, claimKey);
+        }
 
         hasClaimedCompensation[auctionId][recipient] = true;
+        hasClaimedCompensationByKey[auctionId][claimKey] = true;
+        amount = _claimFor(auctionId, recipient, escrowContribution);
+    }
+
+    function claimForKey(uint256 auctionId, bytes32 claimKey, address recipient, uint256 escrowContribution)
+        external
+        override
+        onlyMarket
+        returns (uint256 amount)
+    {
+        if (hasClaimedCompensationByKey[auctionId][claimKey]) {
+            revert CompensationKeyAlreadyClaimed(auctionId, claimKey);
+        }
+
+        hasClaimedCompensationByKey[auctionId][claimKey] = true;
+        amount = _claimFor(auctionId, recipient, escrowContribution);
+    }
+
+    function _claimFor(uint256 auctionId, address recipient, uint256 escrowContribution) internal returns (uint256 amount) {
         amount = previewClaim(auctionId, escrowContribution);
 
         if (amount == 0) {

@@ -19,7 +19,7 @@ describe("FhenixFairMarket Phase 1", function () {
     const { market, adapter, owner } = await loadFixture(deployFixture);
 
     await expect(market.initialize(await adapter.getAddress(), owner.address, ethers.ZeroAddress)).to.be.reverted;
-    expect(await market.contractVersion()).to.equal("phase4");
+    expect(await market.contractVersion()).to.equal("phase4-privacy2");
   });
 
   it("rejects invalid initialization parameters on a fresh implementation", async function () {
@@ -431,7 +431,15 @@ describe("FhenixFairMarket Phase 1", function () {
     const encryptedBids = await collectEncryptedBids(market, 1n);
     const { proof } = await buildPhase3ResolutionProof(market, avs, 1n, encryptedBids, [avsOperatorOne, avsOperatorTwo]);
 
-    await expect(market.connect(owner)["submitResolution(uint256,bytes32,uint256,bytes)"](1n, ethers.ZeroHash, 0n, proof))
+    await expect(
+      market.connect(owner)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
+        1n,
+        ethers.ZeroAddress,
+        ethers.ZeroHash,
+        0n,
+        proof
+      )
+    )
       .to.emit(market, "ResolutionRecorded")
       .withArgs(1n, ethers.ZeroAddress, ethers.ZeroHash);
 
@@ -451,8 +459,9 @@ describe("FhenixFairMarket Phase 1", function () {
     const { proof } = await buildPhase3ResolutionProof(market, avs, 1n, encryptedBids, [avsOperatorOne, avsOperatorTwo]);
 
     await expect(
-      market.connect(owner)["submitResolution(uint256,bytes32,uint256,bytes)"](
+      market.connect(owner)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
         1n,
+        ethers.ZeroAddress,
         ethers.encodeBytes32String("winner"),
         77n,
         proof
@@ -464,8 +473,9 @@ describe("FhenixFairMarket Phase 1", function () {
     const { market, owner } = await loadFixture(createAuctionFixture);
 
     await expect(
-      market.connect(owner)["submitResolution(uint256,bytes32,uint256,bytes)"](
+      market.connect(owner)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
         1n,
+        ethers.ZeroAddress,
         ethers.encodeBytes32String("winner"),
         10n,
         "0x"

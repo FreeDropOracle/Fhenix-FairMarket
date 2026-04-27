@@ -144,4 +144,29 @@ contract SettlementEngine is Ownable, ISettlementEngine {
 
         return avs.verifyAttestation(market, auctionId, requestId, winner, winnerCiphertext, winningAmount, avsProof);
     }
+
+    function verifyShieldedResolutionProof(
+        address market,
+        uint256 auctionId,
+        bytes32 requestId,
+        bytes32 winnerIdentity,
+        bytes32 winnerCiphertext,
+        uint256 winningAmount,
+        bytes calldata avsProof
+    ) external override returns (bool) {
+        if (market == address(0) || address(avs) == address(0)) {
+            revert ZeroAddress();
+        }
+
+        return
+            avs.verifyShieldedAttestation(
+                market,
+                auctionId,
+                requestId,
+                winnerIdentity,
+                winnerCiphertext,
+                winningAmount,
+                avsProof
+            );
+    }
 }

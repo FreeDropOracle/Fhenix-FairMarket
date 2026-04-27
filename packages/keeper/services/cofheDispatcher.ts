@@ -4,6 +4,7 @@ export interface EncryptedBidRecord {
   bidder: string;
   encryptedBid: string;
   availableEscrow: bigint;
+  isShielded?: boolean;
 }
 
 export interface CoFheDispatchJob {
@@ -21,6 +22,7 @@ export interface CoFheResolution {
   winnerHandle: string;
   amountHandle: string;
   winner: string | null;
+  winnerKind: "public" | "shielded" | "none";
   winnerCiphertext: string;
   winningAmount: bigint;
   latencyMs: number;
@@ -100,6 +102,7 @@ export class LocalCofheBatchClient implements FheosBatchClient {
         winnerHandle: job.winnerHandle,
         amountHandle: job.amountHandle,
         winner: winner?.bidder ?? null,
+        winnerKind: winner ? (winner.isShielded ? "shielded" : "public") : "none",
         winnerCiphertext: winner?.encryptedBid ?? ZERO_HASH,
         winningAmount: winner ? decodeEncryptedNumeric(winner.encryptedBid) : 0n,
         latencyMs: this.now() - startedAt,
@@ -137,7 +140,8 @@ export class HttpFheosBatchClient implements FheosBatchClient {
             bids: job.bids.map((bid) => ({
               bidder: bid.bidder,
               encryptedBid: bid.encryptedBid,
-              availableEscrow: bid.availableEscrow.toString()
+              availableEscrow: bid.availableEscrow.toString(),
+              isShielded: bid.isShielded ?? false
             }))
           }))
         }),
@@ -149,17 +153,34 @@ export class HttpFheosBatchClient implements FheosBatchClient {
       }
 
       const payload = (await response.json()) as Array<Record<string, unknown>>;
-      return payload.map((entry) => ({
-        auctionId: BigInt(String(entry.auctionId ?? "0")),
-        requestId: String(entry.requestId ?? ""),
-        winnerHandle: String(entry.winnerHandle ?? ""),
-        amountHandle: String(entry.amountHandle ?? ""),
-        winner: entry.winner === null || entry.winner === undefined ? null : String(entry.winner),
-        winnerCiphertext: String(entry.winnerCiphertext ?? ZERO_HASH),
-        winningAmount: BigInt(String(entry.winningAmount ?? "0")),
-        latencyMs: Number(entry.latencyMs ?? 0),
-        avsProof: String(entry.avsProof ?? "")
-      }));
+      return payload.map((entry) => {
+        const requestId = String(entry.requestId ?? "");
+        const winner = entry.winner === null || entry.winner === undefined ? null : String(entry.winner);
+        const matchingJob = jobs.find((job) => job.requestId === requestId);
+        const winningBid = winner === null ? undefined : matchingJob?.bids.find((bid) => bid.bidder === winner);
+
+        return {
+          auctionId: BigInt(String(entry.auctionId ?? "0")),
+          requestId,
+          winnerHandle: String(entry.winnerHandle ?? ""),
+          amountHandle: String(entry.amountHandle ?? ""),
+          winner,
+          winnerKind:
+            entry.winnerKind === "shielded"
+              ? "shielded"
+              : entry.winnerKind === "none"
+                ? "none"
+                : winningBid?.isShielded
+                  ? "shielded"
+                  : winner === null
+                    ? "none"
+                    : "public",
+          winnerCiphertext: String(entry.winnerCiphertext ?? ZERO_HASH),
+          winningAmount: BigInt(String(entry.winningAmount ?? "0")),
+          latencyMs: Number(entry.latencyMs ?? 0),
+          avsProof: String(entry.avsProof ?? "")
+        };
+      });
     } finally {
       clearTimeout(timeout);
     }

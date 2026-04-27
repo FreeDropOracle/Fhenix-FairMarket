@@ -43,7 +43,7 @@ export const defaultKeeperConfig: KeeperConfig = {
   maxPriorityFeeGwei: 2,
   avsThreshold: 3,
   avsOperatorPrivateKeys: [],
-  fheosEndpoint: "https://fheos.fhenix.zone",
+  fheosEndpoint: "",
   fheosApiKey: "",
   stateFilePath: "./state/keeper-state.json",
   slashingLogPath: "./state/slashing-log.json",

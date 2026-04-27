@@ -64,7 +64,7 @@ async function main() {
     `KEEPER_MARKET_ADDRESS=${runtimePayload.contracts.marketProxy}`,
     `KEEPER_SETTLEMENT_ENGINE_ADDRESS=${runtimePayload.contracts.settlementEngine}`,
     `KEEPER_AVS_ADDRESS=${runtimePayload.contracts.avs}`,
-    `KEEPER_FHEOS_ENDPOINT=${process.env.KEEPER_FHEOS_ENDPOINT || "https://fheos.fhenix.zone"}`,
+    `KEEPER_FHEOS_ENDPOINT=${process.env.KEEPER_FHEOS_ENDPOINT || ""}`,
     "KEEPER_FHEOS_API_KEY=",
     "KEEPER_POLL_INTERVAL_MS=30000",
     "KEEPER_FINALIZE_LEAD_SECONDS=60",

@@ -1,45 +1,70 @@
 "use client";
 
 import { StatusPill } from "@/components/status-pill";
-import { useWallet } from "@/components/wallet-provider";
 import { appConfig } from "@/lib/app-config";
-
-const readinessCards = [
-  {
-    key: "shell",
-    title: "Application shell",
-    copy: "Routing, navigation, and shared shell are wired for the rest of Phase 5."
-  },
-  {
-    key: "wallet",
-    title: "Wallet handshake",
-    copy: "Injected wallet detection, account connection, and wrong-network prompts are active."
-  },
-  {
-    key: "contracts",
-    title: "Contract registry",
-    copy: "Sepolia addresses are loaded from environment variables to keep deployments explicit."
-  },
-  {
-    key: "status",
-    title: "System readiness",
-    copy: "A single health layer explains wallet, network, and protocol posture without noisy copy."
-  }
-] as const;
+import { useRuntimeReadiness } from "@/hooks/use-runtime-readiness";
 
 export function ReadinessPanel() {
-  const wallet = useWallet();
+  const runtime = useRuntimeReadiness();
+
+  const readinessCards = [
+    {
+      key: "shell",
+      title: "Application shell",
+      copy: "Routing, navigation, and the live product shell are already stable enough to host execution surfaces.",
+      tone: "success" as const,
+      label: "Live"
+    },
+    {
+      key: "wallet",
+      title: "Wallet handshake",
+      copy: runtime.walletNote,
+      tone: runtime.walletTone,
+      label:
+        runtime.walletTone === "success"
+          ? "Bound"
+          : runtime.walletTone === "warning"
+            ? "Awaiting action"
+            : "Wallet missing"
+    },
+    {
+      key: "contracts",
+      title: "Contract registry",
+      copy: runtime.registryNote,
+      tone: runtime.registryTone,
+      label:
+        runtime.registryTone === "success"
+          ? "Verified"
+          : runtime.registryTone === "warning"
+            ? "Verifying"
+            : "Blocked"
+    },
+    {
+      key: "coprocessor",
+      title: appConfig.coprocessor.name,
+      copy: runtime.coprocessor.note,
+      tone: runtime.coprocessor.tone,
+      label: runtime.coprocessor.live ? "Monitored" : runtime.coprocessor.label
+    },
+    {
+      key: "avs",
+      title: "AVS verification engine",
+      copy: runtime.avsNote,
+      tone: runtime.avsTone,
+      label: runtime.avsTone === "success" ? "Fraud proofs armed" : "Awaiting checkpoint"
+    }
+  ] as const;
 
   return (
     <section className="readiness-panel">
       <div className="section-header">
         <div>
-          <p className="eyebrow">Task 5.1 Acceptance Surface</p>
-          <h2 className="section-title">Foundation checks in one glance.</h2>
+          <p className="eyebrow">Runtime Readiness</p>
+          <h2 className="section-title">Operational checks in one glance.</h2>
         </div>
         <p className="section-note">
-          This layer is intentionally compact. The user sees what is actionable now, not the whole protocol
-          narrative.
+          This layer now binds live wallet posture, contract registry checks, and proof-lane context instead of
+          repeating build-task names.
         </p>
       </div>
       <div className="readiness-grid">
@@ -47,34 +72,7 @@ export function ReadinessPanel() {
           <article key={card.key} className="readiness-card">
             <div className="readiness-head">
               <h3 className="readiness-title">{card.title}</h3>
-              <StatusPill
-                tone={
-                  card.key === "wallet"
-                    ? wallet.isConnected && wallet.isSupportedNetwork
-                      ? "success"
-                      : wallet.hasProvider
-                        ? "warning"
-                        : "danger"
-                    : card.key === "contracts"
-                      ? appConfig.contracts.ready
-                        ? "success"
-                        : "warning"
-                      : "success"
-                }
-                label={
-                  card.key === "wallet"
-                    ? wallet.isConnected && wallet.isSupportedNetwork
-                      ? "Ready"
-                      : wallet.hasProvider
-                        ? "Awaiting action"
-                        : "Wallet missing"
-                    : card.key === "contracts"
-                      ? appConfig.contracts.ready
-                        ? "Configured"
-                        : "Pending"
-                      : "Live"
-                }
-              />
+              <StatusPill tone={card.tone} label={card.label} pulse={card.tone === "success"} />
             </div>
             <p className="readiness-copy">{card.copy}</p>
           </article>

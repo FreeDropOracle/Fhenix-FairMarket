@@ -107,7 +107,7 @@ function getPostureMessage(state: AuctionState) {
     case "resolving":
       return "Bid entry is closed. This lot is already moving through the async settlement path.";
     case "finalized":
-      return "Settlement is complete. Claim surfaces will converge in Task 5.4.";
+      return "Settlement is complete. Claim and settlement surfaces are now the next safe route.";
     case "voided":
       return "This lot already moved into fallback. Refund-facing actions will surface in the dashboard phase.";
     case "active":
@@ -269,7 +269,7 @@ export function AuctionActionConsole({
     <section className="action-console">
       <div className="section-header">
         <div>
-          <p className="eyebrow">Task 5.3 / Encrypted actions</p>
+          <p className="eyebrow">Confidential Action Deck</p>
           <h2 className="section-title">Escrow first. Confidential bid second. State feedback throughout.</h2>
         </div>
         <StatusPill label={executionMode} tone={appConfig.contracts.ready ? "success" : "warning"} />

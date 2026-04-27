@@ -1,30 +1,30 @@
-import Link from "next/link";
-
+import { appConfig } from "@/lib/app-config";
 import { HeroCrest } from "@/components/brand-lockup";
+import { HeroRuntimeSignals } from "@/components/hero-runtime-signals";
 import { ReadinessPanel } from "@/components/readiness-panel";
 import { RouteCard } from "@/components/route-card";
 
 const routeCards = [
   {
     href: "/marketplace",
-    kicker: "Marketplace Core",
-    title: "Auction Desk",
+    kicker: "Execution Surface",
+    title: "Live Auctions Terminal",
     description: "Marketplace listing, state-aware auction cards, and detailed views are now the active build surface.",
-    badge: "Task 5.2"
+    badge: "Auctions live"
   },
   {
     href: "/portfolio",
     kicker: "User Operations",
-    title: "Portfolio & Claims",
+    title: "Claim & Settlement Hub",
     description: "A single place for participations, refunds, seller proceeds, and asset claims.",
-    badge: "Task 5.4"
+    badge: "Claims ready"
   },
   {
     href: "/governance",
     kicker: "Protocol Trust",
-    title: "Reliability Layer",
+    title: "Safety Dead-man's Switch",
     description: "Status, governance posture, and delayed-settlement messaging will live here.",
-    badge: "Task 5.5"
+    badge: "Reliability live"
   }
 ] as const;
 
@@ -43,27 +43,14 @@ export default function HomePage() {
             wallet readiness, confidential bidding, escrow orchestration, and clear operational states.
           </p>
           <div className="hero-actions">
-            <Link className="primary-action" href="/marketplace">
+            <a className="primary-action" href="/marketplace">
               Open Auction Desk
-            </Link>
-            <Link className="secondary-action" href="/about">
+            </a>
+            <a className="secondary-action" href={appConfig.docs.foundationUrl} rel="noreferrer" target="_blank">
               Review Foundation
-            </Link>
+            </a>
           </div>
-          <div className="hero-signal-grid">
-            <div className="signal-card">
-              <span className="signal-label">Initial network</span>
-              <strong className="signal-value">Sepolia only</strong>
-            </div>
-            <div className="signal-card">
-              <span className="signal-label">Current scope</span>
-              <strong className="signal-value">Task 5.2 auction desk</strong>
-            </div>
-            <div className="signal-card">
-              <span className="signal-label">Visual direction</span>
-              <strong className="signal-value">Dark-first tribunal UX</strong>
-            </div>
-          </div>
+          <HeroRuntimeSignals />
         </div>
       </section>
 
@@ -72,11 +59,11 @@ export default function HomePage() {
       <section className="section-block">
         <div className="section-header">
           <div>
-            <p className="eyebrow">Phase 5.1 Routing Surface</p>
-            <h2 className="section-title">Foundation routes are wired and ready.</h2>
+            <p className="eyebrow">Operational Routes</p>
+            <h2 className="section-title">Execution surfaces are wired and named for users.</h2>
           </div>
           <p className="section-note">
-            The shell is stable. Marketplace Core is now filling it with real flows while keeping the same visual posture.
+            The shell is stable. Each route now reads like a live service instead of an internal task tracker.
           </p>
         </div>
         <div className="route-grid">

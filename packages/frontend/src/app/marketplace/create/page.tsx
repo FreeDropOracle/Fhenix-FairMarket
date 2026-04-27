@@ -25,11 +25,11 @@ export default function CreateAuctionPage() {
     <main className="page-grid create-shell">
       <section className="section-block create-hero">
         <div>
-          <p className="eyebrow">Task 5.2 / Create auction</p>
+          <p className="eyebrow">Auction Listing Console</p>
           <h1 className="section-title">Launch the next confidential lot without over-explaining it.</h1>
           <p className="section-note create-hero__copy">
-            This screen prepares the structure for the actual transaction flow. Task 5.3 will wire the
-            escrow and submission surfaces, but the product shape is ready now.
+            This screen prepares the structure for the actual transaction flow. Escrow and confidential
+            submission surfaces are already reflected in the product shape.
           </p>
         </div>
         <div className="create-hero__actions">
@@ -116,7 +116,7 @@ export default function CreateAuctionPage() {
           </div>
           <div className="hero-actions">
             <button className="primary-action create-launch-button" type="button" disabled>
-              Transaction wiring lands in Task 5.3
+              Transaction wiring follows the live action deck
             </button>
             <Link className="secondary-action" href="/about">
               Review foundation notes

@@ -2,7 +2,8 @@
 
 import { StatusPill } from "@/components/status-pill";
 import { useWallet } from "@/components/wallet-provider";
-import { appConfig, formatAddress } from "@/lib/app-config";
+import { appConfig } from "@/lib/app-config";
+import { useRuntimeReadiness } from "@/hooks/use-runtime-readiness";
 
 type HealthItem = {
   label: string;
@@ -12,16 +13,13 @@ type HealthItem = {
 
 export function SystemHealthBar() {
   const wallet = useWallet();
+  const runtime = useRuntimeReadiness();
 
   const items: HealthItem[] = [
     {
       label: "Wallet",
-      value: wallet.hasProvider
-        ? wallet.account
-          ? formatAddress(wallet.account)
-          : "Awaiting connection"
-        : "No injected wallet",
-      tone: wallet.account ? "success" : wallet.hasProvider ? "warning" : "danger"
+      value: runtime.walletValue,
+      tone: runtime.walletTone
     },
     {
       label: "Network",
@@ -34,8 +32,18 @@ export function SystemHealthBar() {
     },
     {
       label: "Contracts",
-      value: appConfig.contracts.ready ? "Proxy, engine, slashed pot, and AVS wired" : "Phase 6 deployment values pending",
-      tone: appConfig.contracts.ready ? "success" : "warning"
+      value: runtime.registryLabel,
+      tone: runtime.registryTone
+    },
+    {
+      label: "Coprocessor",
+      value: runtime.coprocessor.live ? appConfig.coprocessor.name : runtime.coprocessor.label,
+      tone: runtime.coprocessor.tone
+    },
+    {
+      label: "AVS",
+      value: runtime.avsLabel,
+      tone: runtime.avsTone
     },
     {
       label: "Protocol posture",
@@ -63,6 +71,7 @@ export function SystemHealthBar() {
                     : "Standby"
             }
             tone={item.tone}
+            pulse={item.tone === "success"}
           />
         </div>
       ))}

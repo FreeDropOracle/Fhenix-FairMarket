@@ -55,6 +55,17 @@ body::after {
   background-size: 160px 160px;
   opacity: 0.14;
 }
+@keyframes status-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(115, 230, 185, 0.34);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(115, 230, 185, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(115, 230, 185, 0);
+  }
+}
 a { color: inherit; text-decoration: none; }
 button { font: inherit; }
 a:focus-visible,
@@ -336,7 +347,7 @@ select:focus-visible {
 }
 .health-bar {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   padding: 18px 24px 0;
 }
@@ -382,6 +393,10 @@ select:focus-visible {
 .status-pill[data-tone="danger"] { color: var(--danger-400); border-color: rgba(255, 139, 156, 0.22); background: rgba(255, 139, 156, 0.08); }
 .status-pill[data-tone="neutral"] { color: var(--text-mid); border-color: rgba(180, 171, 224, 0.14); background: rgba(180, 171, 224, 0.06); }
 .status-pill__dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.status-pill__dot[data-pulse="true"] {
+  box-shadow: 0 0 0 0 currentColor;
+  animation: status-pulse 1.8s ease-out infinite;
+}
 .shell-main { padding: 28px 24px 36px; }
 .page-grid { display: grid; gap: 24px; }
 .hero-panel, .section-block, .readiness-panel {
@@ -480,12 +495,42 @@ select:focus-visible {
 .signal-label, .detail-label, .route-kicker, .config-label { color: var(--text-low); font-size: 0.74rem; letter-spacing: 0.14em; text-transform: uppercase; }
 .signal-value, .route-title, .detail-title, .config-value { display: block; margin-top: 10px; }
 .signal-value { font-size: 1.02rem; }
+.signal-inline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--text-mid);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.signal-inline-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-mid);
+}
+.signal-inline-dot[data-tone="success"] { background: var(--success-400); }
+.signal-inline-dot[data-tone="warning"] { background: var(--warning-400); }
+.signal-inline-dot[data-tone="danger"] { background: var(--danger-400); }
+.signal-inline-dot[data-tone="neutral"] { background: var(--blue-300); }
+.signal-inline-dot[data-pulse="true"] {
+  box-shadow: 0 0 0 0 currentColor;
+  animation: status-pulse 1.8s ease-out infinite;
+}
+.signal-copy {
+  display: block;
+  margin-top: 12px;
+  color: var(--text-mid);
+  line-height: 1.65;
+}
 .readiness-panel, .section-block { padding: 24px; }
 .section-block--compact { padding-bottom: 18px; }
 .section-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
 .section-title { font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -0.04em; }
 .section-note { max-width: 46ch; margin: 0; }
-.readiness-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.readiness-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .readiness-head {
   display: flex;
   align-items: center;
@@ -508,6 +553,11 @@ select:focus-visible {
 .detail-title { margin-top: 12px; font-size: 1.8rem; }
 .detail-copy { margin-top: 16px; }
 .config-value { color: var(--text-high); font-size: 1.08rem; font-weight: 600; }
+.config-card .status-pill { margin-top: 14px; }
+.config-card a {
+  color: var(--blue-300);
+  word-break: break-word;
+}
 .marketplace-shell, .detail-shell, .create-shell { gap: 22px; }
 .marketplace-hero, .detail-hero, .create-grid, .detail-grid {
   display: grid;

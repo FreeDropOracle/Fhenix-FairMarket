@@ -4,7 +4,8 @@ import Link from "next/link";
 
 import { StatusPill } from "@/components/status-pill";
 import { useWallet } from "@/components/wallet-provider";
-import { appConfig, formatAddress } from "@/lib/app-config";
+import { appConfig } from "@/lib/app-config";
+import { useRuntimeReadiness } from "@/hooks/use-runtime-readiness";
 import {
   mobileReadinessPoints,
   protocolSignals,
@@ -14,17 +15,14 @@ import {
 
 export function ReliabilityConsole() {
   const wallet = useWallet();
+  const runtime = useRuntimeReadiness();
 
   const runtimeSignals = [
     {
       label: "Wallet session",
-      value: wallet.isConnected ? formatAddress(wallet.account) : wallet.hasProvider ? "Awaiting connection" : "Wallet missing",
-      tone: wallet.isConnected ? "success" : wallet.hasProvider ? "warning" : "danger",
-      note: wallet.isConnected
-        ? "The current session is bound and able to sign actions."
-        : wallet.hasProvider
-          ? "The shell is ready, but the session is not yet bound to an account."
-          : "No injected wallet is present, so action surfaces should stay blocked."
+      value: runtime.walletValue,
+      tone: runtime.walletTone,
+      note: runtime.walletNote
     },
     {
       label: "Network posture",
@@ -38,11 +36,21 @@ export function ReliabilityConsole() {
     },
     {
       label: "Contract registry",
-      value: appConfig.contracts.ready ? "Configured" : "Preview mode",
-      tone: appConfig.contracts.ready ? "success" : "warning",
-      note: appConfig.contracts.ready
-        ? "Execution-capable addresses are available to the frontend."
-        : "The UX must keep destructive or dead-end calls behind preview messaging until addresses are configured."
+      value: runtime.registryLabel,
+      tone: runtime.registryTone,
+      note: runtime.registryNote
+    },
+    {
+      label: "Coprocessor bridge",
+      value: runtime.coprocessor.live ? appConfig.coprocessor.name : runtime.coprocessor.label,
+      tone: runtime.coprocessor.tone,
+      note: runtime.coprocessor.note
+    },
+    {
+      label: "AVS checkpoint",
+      value: runtime.avsLabel,
+      tone: runtime.avsTone,
+      note: runtime.avsNote
     },
     {
       label: "Current route policy",
@@ -80,7 +88,7 @@ export function ReliabilityConsole() {
     <main className="page-grid reliability-shell">
       <section className="reliability-hero">
         <div>
-          <p className="eyebrow">Task 5.5 / Reliability UX</p>
+          <p className="eyebrow">Safety Dead-man&apos;s Switch</p>
           <h1 className="section-title">Protocol status, recovery language, and delayed-settlement trust.</h1>
           <p className="section-note reliability-hero__copy">
             This route is where the product proves it can explain itself under stress: wrong network, missing
@@ -116,11 +124,12 @@ export function ReliabilityConsole() {
                     ? "Ready"
                     : signal.tone === "warning"
                       ? "Watch"
-                      : signal.tone === "danger"
-                        ? "Blocked"
-                        : "Standby"
+                : signal.tone === "danger"
+                  ? "Blocked"
+                  : "Standby"
                 }
                 tone={signal.tone}
+                pulse={signal.tone === "success"}
               />
             </div>
             <strong className="reliability-runtime-card__value">{signal.value}</strong>
@@ -160,6 +169,46 @@ export function ReliabilityConsole() {
           </div>
         </article>
 
+        <article className="detail-card portfolio-section-card">
+          <p className="eyebrow">Transparency links</p>
+          <h2 className="detail-title portfolio-section-card__title">External proof and coprocessor surfaces</h2>
+          <div className="claims-list">
+            <article className="claim-card">
+              <div className="claim-card__head">
+                <div>
+                  <span className="signal-label">Coprocessor reference</span>
+                  <h3 className="claim-card__title">{appConfig.coprocessor.name}</h3>
+                </div>
+                <StatusPill label={runtime.coprocessor.live ? "Live probe" : "Reference"} tone={runtime.coprocessor.tone} pulse={runtime.coprocessor.live} />
+              </div>
+              <p className="claim-card__copy">
+                Keep the privacy engine visible to the user, even when the live probe is still exposed through an
+                external public surface.
+              </p>
+              <a className="secondary-action portfolio-inline-action" href={appConfig.coprocessor.referenceUrl} rel="noreferrer" target="_blank">
+                Open Fhenix Coprocessor Stats
+              </a>
+            </article>
+            <article className="claim-card">
+              <div className="claim-card__head">
+                <div>
+                  <span className="signal-label">Foundation review</span>
+                  <h3 className="claim-card__title">Security and economic principles</h3>
+                </div>
+                <StatusPill label="Docs linked" tone="success" pulse />
+              </div>
+              <p className="claim-card__copy">
+                The recovery surface should always give the user a direct path to the canonical foundation notes.
+              </p>
+              <a className="secondary-action portfolio-inline-action" href={appConfig.docs.foundationUrl} rel="noreferrer" target="_blank">
+                Review foundation
+              </a>
+            </article>
+          </div>
+        </article>
+      </section>
+
+      <section className="portfolio-grid">
         <article className="detail-card portfolio-section-card">
           <p className="eyebrow">Recovery playbooks</p>
           <h2 className="detail-title portfolio-section-card__title">What the interface should say next</h2>

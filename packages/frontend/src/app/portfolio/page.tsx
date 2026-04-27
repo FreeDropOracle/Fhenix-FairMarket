@@ -24,7 +24,7 @@ export default function PortfolioPage() {
     <main className="page-grid portfolio-shell">
       <section className="portfolio-hero">
         <div>
-          <p className="eyebrow">Task 5.4 / User operations</p>
+          <p className="eyebrow">Claim &amp; Settlement Hub</p>
           <h1 className="section-title">Everything the user can do, without hunting across auctions.</h1>
           <p className="section-note portfolio-hero__copy">
             This desk centralizes personal exposure: created auctions, active participation, claimable balances,

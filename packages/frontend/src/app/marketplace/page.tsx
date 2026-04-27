@@ -65,7 +65,7 @@ export default async function MarketplacePage({ searchParams }: MarketplacePageP
     <main className="page-grid marketplace-shell">
       <section className="marketplace-hero">
         <div className="marketplace-hero__copy">
-          <p className="eyebrow">Task 5.2 / Marketplace Core</p>
+          <p className="eyebrow">Live Auctions Terminal</p>
           <h1 className="hero-title marketplace-hero__title">Confidential auction desks, without the noise.</h1>
           <p className="hero-summary">
             This surface is focused on execution: browse lots, inspect settlement posture, and move toward

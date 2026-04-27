@@ -2,7 +2,13 @@ import { run } from "hardhat";
 
 import { readDeploymentFile, resolveDeploymentPaths } from "./utils";
 
-async function verifyAddress(label: string, payload: { address: string; constructorArguments?: unknown[] }) {
+interface VerifyPayload {
+  address: string;
+  constructorArguments?: unknown[];
+  contract?: string;
+}
+
+async function verifyAddress(label: string, payload: VerifyPayload) {
   try {
     await run("verify:verify", payload);
     console.log(`Verified ${label} at ${payload.address}`);
@@ -45,7 +51,8 @@ async function main() {
 
   await verifyAddress("FhenixFairMarketProxy", {
     address: deployment.proxy,
-    constructorArguments: [deployment.implementation, deployment.proxyInitData]
+    constructorArguments: [deployment.implementation, deployment.proxyInitData],
+    contract: "contracts/core/FhenixFairMarketProxy.sol:FhenixFairMarketProxy"
   });
 
   if (deployment.avs && deployment.avsOperators && deployment.avsThreshold) {

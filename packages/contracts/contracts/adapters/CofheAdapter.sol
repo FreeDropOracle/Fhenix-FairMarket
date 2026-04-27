@@ -8,15 +8,19 @@ contract CofheAdapter is ICofheAdapter {
     using CofheCiphertextEncoding for bytes32;
 
     function lte(bytes32 ciphertext, uint256 plaintext) external pure override returns (bool) {
-        return ciphertext.decodeEuint32() <= plaintext;
+        return ciphertext.decodeNumeric() <= plaintext;
     }
 
     function gt(bytes32 ciphertext, uint256 plaintext) external pure override returns (bool) {
-        return ciphertext.decodeEuint32() > plaintext;
+        return ciphertext.decodeNumeric() > plaintext;
     }
 
     function asEuint32(uint32 value) external pure override returns (bytes32) {
         return CofheCiphertextEncoding.encodeEuint32(value);
+    }
+
+    function asEuint96(uint96 value) external pure override returns (bytes32) {
+        return CofheCiphertextEncoding.encodeEuint96(value);
     }
 
     function asEbool(bool value) external pure override returns (bytes32) {
@@ -38,7 +42,7 @@ contract CofheAdapter is ICofheAdapter {
         override
         returns (bool)
     {
-        return encryptedBid.decodeEuint32() <= availableEscrow;
+        return encryptedBid.decodeNumeric() <= availableEscrow;
     }
 
     function ciphertextKind(bytes32 ciphertext) external pure override returns (uint8) {

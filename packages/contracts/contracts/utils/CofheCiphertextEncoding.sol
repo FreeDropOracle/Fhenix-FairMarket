@@ -8,13 +8,19 @@ library CofheCiphertextEncoding {
     enum CiphertextKind {
         UNKNOWN,
         EUINT32,
-        EBOOL
+        EBOOL,
+        EUINT96
     }
 
     error InvalidCiphertextKind(uint8 expected, uint8 actual);
+    error InvalidNumericCiphertextKind(uint8 actual);
 
     function encodeEuint32(uint32 value) internal pure returns (bytes32) {
         return bytes32((uint256(uint8(CiphertextKind.EUINT32)) << _KIND_SHIFT) | uint256(value));
+    }
+
+    function encodeEuint96(uint96 value) internal pure returns (bytes32) {
+        return bytes32((uint256(uint8(CiphertextKind.EUINT96)) << _KIND_SHIFT) | uint256(value));
     }
 
     function encodeEbool(bool value) internal pure returns (bytes32) {
@@ -31,10 +37,25 @@ library CofheCiphertextEncoding {
         return payloadOf(ciphertext) != 0;
     }
 
+    function decodeEuint96(bytes32 ciphertext) internal pure returns (uint96) {
+        _requireKind(ciphertext, CiphertextKind.EUINT96);
+        return uint96(payloadOf(ciphertext));
+    }
+
+    function decodeNumeric(bytes32 ciphertext) internal pure returns (uint256) {
+        CiphertextKind kind = kindOf(ciphertext);
+
+        if (kind == CiphertextKind.EUINT32 || kind == CiphertextKind.EUINT96) {
+            return payloadOf(ciphertext);
+        }
+
+        revert InvalidNumericCiphertextKind(uint8(kind));
+    }
+
     function kindOf(bytes32 ciphertext) internal pure returns (CiphertextKind) {
         uint8 kind = uint8(uint256(ciphertext) >> _KIND_SHIFT);
 
-        if (kind > uint8(CiphertextKind.EBOOL)) {
+        if (kind > uint8(CiphertextKind.EUINT96)) {
             return CiphertextKind.UNKNOWN;
         }
 

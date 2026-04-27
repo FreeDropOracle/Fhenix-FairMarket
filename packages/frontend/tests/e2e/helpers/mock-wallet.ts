@@ -26,10 +26,12 @@ export async function injectMockWallet(page: Page, options: MockWalletOptions = 
       const approveSelector = "0x095ea7b3";
       const createAuctionSelector = "0x41370f0d";
       const lockEscrowSelector = "0x8e4928af";
+      const placeBidSelector = "0x66ab1d52";
       const cancelAuctionSelector = "0x96b5a755";
       const claimSellerProceedsSelector = "0x3f417737";
       const escrowBalancesSelector = "0x854ddc0c";
       const getAuctionSelector = "0x78bd7935";
+      const getEncryptedBidSelector = "0x55ea29b3";
       const previewSellerPayoutSelector = "0xab9c1b00";
       const mockNftContract = "0x1238536071E1c677A632429e3655c799b22cDA52";
       const mockTokenId = 24191n;
@@ -65,6 +67,10 @@ export async function injectMockWallet(page: Page, options: MockWalletOptions = 
         return BigInt(`0x${slot}`);
       }
 
+      function normalizeAddress(value: string) {
+        return value.toLowerCase();
+      }
+
       class MockEthereumProvider {
         private account = injectedAccount;
 
@@ -87,6 +93,8 @@ export async function injectMockWallet(page: Page, options: MockWalletOptions = 
         private sellerPayoutWei = 100000000000000000n;
 
         private walletEscrowWei = 0n;
+
+        private encryptedBids = new Map<string, string>();
 
         private getTxHash() {
           const hash = `0x${this.nextTxNumber.toString(16).padStart(64, "0")}`;
@@ -119,6 +127,10 @@ export async function injectMockWallet(page: Page, options: MockWalletOptions = 
               return encodeUint(this.auctionCancelled && !this.sellerClaimed ? this.sellerPayoutWei : 0n);
             case escrowBalancesSelector:
               return encodeUint(this.walletEscrowWei);
+            case getEncryptedBidSelector: {
+              const bidder = decodeAddressFromSlot(data, 1);
+              return this.encryptedBids.get(normalizeAddress(bidder)) ?? zeroBytes32;
+            }
             case getAuctionSelector:
               return [
                 encodeAddress(mockNftContract).slice(2),
@@ -156,6 +168,13 @@ export async function injectMockWallet(page: Page, options: MockWalletOptions = 
             case lockEscrowSelector: {
               const valueHex = transaction.value ?? "0x0";
               this.walletEscrowWei += BigInt(valueHex);
+              this.receipts.set(txHash, this.buildReceipt(txHash));
+              return txHash;
+            }
+            case placeBidSelector: {
+              const bidder = normalizeAddress(transaction.from ?? this.account);
+              const encryptedBid = `0x${readSlot(data, 1)}`;
+              this.encryptedBids.set(bidder, encryptedBid);
               this.receipts.set(txHash, this.buildReceipt(txHash));
               return txHash;
             }

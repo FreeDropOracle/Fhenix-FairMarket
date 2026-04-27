@@ -8,7 +8,7 @@ import { StatusPill, type StatusPillTone } from "@/components/status-pill";
 import { useWallet } from "@/components/wallet-provider";
 import { appConfig, formatAddress, isAddressLike } from "@/lib/app-config";
 import type { AuctionState } from "@/lib/auctions";
-import { lockEscrowWithWallet, readEscrowBalanceWithWallet } from "@/lib/live-auction-actions";
+import { lockEscrowWithWallet, placeBidWithWallet, readEscrowBalanceWithWallet } from "@/lib/live-auction-actions";
 
 type ActionMode = "escrow" | "bid";
 type StageState = "idle" | "active" | "done";
@@ -129,7 +129,7 @@ function getPostureMessage(state: AuctionState, isLiveAuction: boolean, closeWin
       }
 
       return isLiveAuction
-        ? "This lot is open for real on-chain escrow locking right now."
+        ? "This lot is open for real on-chain escrow locking and confidential bidding right now."
         : "This lot is open for escrow staging and confidential bidding.";
   }
 }
@@ -161,6 +161,7 @@ export function AuctionActionConsole({
   const isLiveAuction = Boolean(onChain);
   const closeWindowReached = Boolean(onChain && isEnded(onChain.endTimeUnix));
   const isAuctionActive = auctionState === "active" && !closeWindowReached;
+  const availableWalletEscrowWei = BigInt(walletEscrowWei);
   const needsWallet = !wallet.hasProvider || !wallet.isConnected || !wallet.isSupportedNetwork;
   const marketReady = isAddressLike(appConfig.contracts.marketProxyAddress);
   const walletEscrowLabel = !wallet.hasProvider
@@ -234,7 +235,7 @@ export function AuctionActionConsole({
             ? "Lock real escrow on chain before expecting seller cancellation or refund logic to see it."
             : "Escrow must be added before confidential bidding can open for this lot."
           : isLiveAuction
-            ? "The escrow lane is live on chain. The confidential bid lane will stay closed here until its encrypted wallet path is fully wired."
+            ? "The escrow lane is live on chain. Once your wallet escrow covers the amount, you can submit the confidential bid directly from here."
             : "A confidential bid becomes available after you have enough escrow in place."
       );
       setNotice(null);
@@ -351,10 +352,72 @@ export function AuctionActionConsole({
 
   const handleBidSubmit = async () => {
     if (isLiveAuction) {
-      setHeadline("Confidential bid lane pending");
-      setNote("Your escrow can be locked on chain from this page, but sealed bid submission is still disabled here until the production encrypted wallet path is wired.");
-      setNotice("No bid transaction was sent. This release only activates real on-chain escrow for live auctions.");
-      resetStageRail("bid");
+      if (!onChain || !window.ethereum || !marketReady) {
+        setNotice("The live auction contract is not ready in this frontend.");
+        return;
+      }
+
+      const amount = Number.parseFloat(bidInput);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        setNotice("Enter a positive bid amount before continuing.");
+        return;
+      }
+
+      const walletReady = await ensureWalletReady();
+      if (!walletReady || !wallet.account) {
+        return;
+      }
+
+      const amountWei = parseEther(bidInput);
+      if (availableWalletEscrowWei === 0n) {
+        setNotice("Lock escrow first before submitting a confidential bid.");
+        return;
+      }
+      if (amountWei > availableWalletEscrowWei) {
+        setNotice("Your bid cannot exceed the escrow already locked by this wallet.");
+        return;
+      }
+
+      setIsRunning(true);
+      setNotice(null);
+      setHeadline("Submitting confidential bid");
+      setNote("Preparing the confidential bid envelope and waiting for the on-chain confirmation trail.");
+      setLastReceipt(null);
+
+      try {
+        setStages(buildStages(bidStages, 0));
+        const result = await placeBidWithWallet({
+          account: wallet.account,
+          amountWei,
+          auctionId: BigInt(onChain.auctionId),
+          explorerBaseUrl: appConfig.chain.blockExplorerUrl,
+          marketAddress: appConfig.contracts.marketProxyAddress,
+          onProgress: (message) => {
+            setNotice(message);
+            if (message.includes("Confirm")) {
+              setStages(buildStages(bidStages, 1));
+            } else if (message.includes("Waiting")) {
+              setStages(buildStages(bidStages, 2));
+            } else if (message.includes("stored")) {
+              setStages(buildStages(bidStages, 3));
+            }
+          },
+          provider: window.ethereum
+        });
+
+        setStages(buildStages(bidStages, null, true));
+        setHeadline("Confidential bid stored");
+        setNote("The encrypted bid handle is now recorded on chain and will only matter again once settlement starts.");
+        setLastReceipt(`Confidential bid submitted for ${formatEth(amount)} on ${auctionTitle}.`);
+        setWalletEscrowWei(result.walletEscrowWei);
+        router.refresh();
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Confidential bid submission failed.");
+        resetStageRail("bid");
+      } finally {
+        setIsRunning(false);
+      }
+
       return;
     }
 
@@ -401,7 +464,7 @@ export function AuctionActionConsole({
         ? "Lock escrow on chain"
         : "Add escrow"
       : isLiveAuction
-        ? "Bid lane unavailable"
+        ? "Place confidential bid"
         : "Seal bid";
 
   return (
@@ -533,12 +596,12 @@ export function AuctionActionConsole({
                   </div>
                   <p className="action-console__hint">
                     {isLiveAuction
-                      ? "This auction already accepts real escrow on chain. Sealed bid submission is still closed here until the encrypted wallet path is upgraded end to end."
+                      ? "This button submits a real on-chain confidential bid handle. Make sure this wallet already locked enough escrow first."
                       : `${confidentialityLabel}. Add enough escrow first, then seal the bid amount you want to submit.`}
                   </p>
                   <button
                     className="primary-action action-console__cta"
-                    disabled={isRunning || isLiveAuction}
+                    disabled={isRunning}
                     onClick={handleBidSubmit}
                     type="button"
                   >

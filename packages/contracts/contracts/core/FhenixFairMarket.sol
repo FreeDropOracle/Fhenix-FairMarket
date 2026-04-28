@@ -11,6 +11,7 @@ import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "../adapters/NFTGuard.sol";
 import "../interfaces/ICofheAdapter.sol";
 import "../interfaces/IShieldedEscrowVault.sol";
+import "../interfaces/IShieldedIdentityRegistry.sol";
 import "../interfaces/IShieldedRefundSource.sol";
 import "../interfaces/ISettlementEngine.sol";
 import "../interfaces/ISlashedPot.sol";
@@ -98,11 +99,15 @@ contract FhenixFairMarket is
     error ResolutionAlreadyRequested(uint256 auctionId, bytes32 requestId);
     error UnauthorizedShieldedRefundSource(address caller, address expectedVault);
     error ShieldedEscrowVaultNotConfigured();
+    error ShieldedIdentityRegistryNotConfigured();
     error InvalidCommitmentHash();
+    error InvalidIdentityHash();
+    error UnexpectedShieldedWinningCiphertext(uint256 auctionId, bytes32 expectedCiphertext, bytes32 providedCiphertext);
     error ShieldedRefundAlreadyClaimed(uint256 auctionId, bytes32 nullifierHash);
     error ShieldedRefundsNotReady(uint256 auctionId, AuctionState currentState);
     error WinnerRequiredForWinningAmount(uint256 auctionId, uint256 winningAmount);
     error WinningAmountBelowStartingPrice(uint256 auctionId, uint256 winningAmount, uint256 requiredMinimum);
+    error UnauthorizedShieldedIdentityClaim(uint256 auctionId, bytes32 providedIdentityHash, bytes32 expectedIdentityHash);
     error UnauthorizedShieldedAssetClaim(uint256 auctionId, bytes32 providedCommitmentHash, bytes32 expectedCommitmentHash);
     error ShieldedWinnerMustClaimPrivately(uint256 auctionId);
     error ZeroWinningAmount(uint256 auctionId, address winner);
@@ -152,6 +157,7 @@ contract FhenixFairMarket is
     mapping(uint256 => mapping(bytes32 => bool)) private _knownShieldedCommitments;
     mapping(uint256 => bytes32[]) private _shieldedCommitments;
     mapping(uint256 => bytes32) private _winningCommitments;
+    IShieldedIdentityRegistry public shieldedIdentityRegistry;
 
     event AuctionCreated(
         uint256 indexed auctionId,
@@ -182,6 +188,7 @@ contract FhenixFairMarket is
     event AssetClaimed(uint256 indexed auctionId, address indexed recipient, uint256 tokenId);
     event CofheAdapterUpdated(address indexed previousAdapter, address indexed nextAdapter);
     event ShieldedEscrowVaultUpdated(address indexed previousVault, address indexed nextVault);
+    event ShieldedIdentityRegistryUpdated(address indexed previousRegistry, address indexed nextRegistry);
     event SettlementDependenciesUpdated(address indexed settlementEngine, address indexed slashedPot);
     event FallbackTriggered(uint256 indexed auctionId, uint256 elapsed, uint256 threshold);
     event FinalizationIncentiveReserved(
@@ -247,7 +254,7 @@ contract FhenixFairMarket is
     }
 
     function contractVersion() public pure virtual returns (string memory) {
-        return "phase4-privacy2";
+        return "phase4-privacy4";
     }
 
     receive() external payable {}
@@ -282,6 +289,15 @@ contract FhenixFairMarket is
         shieldedEscrowVault = newVault;
 
         emit ShieldedEscrowVaultUpdated(previousVault, address(newVault));
+    }
+
+    function setShieldedIdentityRegistry(IShieldedIdentityRegistry newRegistry) external onlyOwner {
+        _requireDependency(address(newRegistry));
+
+        address previousRegistry = address(shieldedIdentityRegistry);
+        shieldedIdentityRegistry = newRegistry;
+
+        emit ShieldedIdentityRegistryUpdated(previousRegistry, address(newRegistry));
     }
 
     function createAuction(
@@ -387,7 +403,7 @@ contract FhenixFairMarket is
         emit EscrowLocked(auctionId, msg.sender, msg.value);
     }
 
-    function lockShieldedEscrow(uint256 auctionId, bytes32 commitmentHash)
+    function lockShieldedEscrow(uint256 auctionId, bytes32 identityHash, bytes32 commitmentHash, address claimAuthority)
         external
         payable
         nonReentrant
@@ -396,6 +412,9 @@ contract FhenixFairMarket is
     {
         if (msg.value == 0) {
             revert ZeroValue();
+        }
+        if (identityHash == bytes32(0)) {
+            revert InvalidIdentityHash();
         }
         if (commitmentHash == bytes32(0)) {
             revert InvalidCommitmentHash();
@@ -406,9 +425,12 @@ contract FhenixFairMarket is
         if (address(shieldedEscrowVault).code.length < 1) {
             revert ShieldedEscrowVaultNotConfigured();
         }
+        if (address(shieldedIdentityRegistry).code.length < 1) {
+            revert ShieldedIdentityRegistryNotConfigured();
+        }
 
-        shieldedEscrowVault.lockEscrow{value: msg.value}(auctionId, commitmentHash);
-        _auctions[auctionId].totalEscrow += msg.value;
+        shieldedIdentityRegistry.bindIdentity(auctionId, identityHash, commitmentHash);
+        shieldedEscrowVault.lockEscrow{value: msg.value}(auctionId, commitmentHash, claimAuthority);
         _auctions[auctionId].lastBlockTimestamp = uint64(block.timestamp);
         _observeNetwork();
 
@@ -452,7 +474,13 @@ contract FhenixFairMarket is
         emit BidPlaced(auctionId, msg.sender, encryptedBid);
     }
 
-    function placeShieldedBid(uint256 auctionId, bytes32 commitmentHash, bytes32 encryptedBid)
+    function placeShieldedBid(
+        uint256 auctionId,
+        bytes32 commitmentHash,
+        bytes32 encryptedBid,
+        uint256 coverageDeadline,
+        bytes calldata coverageProof
+    )
         external
         nonReentrant
         auctionExists(auctionId)
@@ -469,9 +497,9 @@ contract FhenixFairMarket is
             revert ShieldedEscrowVaultNotConfigured();
         }
 
-        (uint256 commitmentAuctionId, uint256 availableEscrow, bool refundUnlocked, bool claimed) =
-            shieldedEscrowVault.previewCommitment(commitmentHash);
-        if (commitmentAuctionId != auctionId || availableEscrow == 0 || claimed) {
+        (uint256 commitmentAuctionId, bool refundUnlocked, bool claimed) =
+            shieldedEscrowVault.commitmentState(commitmentHash);
+        if (commitmentAuctionId != auctionId || claimed) {
             revert MissingShieldedEncryptedBid(auctionId, commitmentHash);
         }
         if (refundUnlocked) {
@@ -480,9 +508,7 @@ contract FhenixFairMarket is
         if (auction.startingPrice != 0 && !cofheAdapter.gt(encryptedBid, auction.startingPrice - 1)) {
             revert BidBelowStartingPrice(auctionId, msg.sender, auction.startingPrice);
         }
-        if (!cofheAdapter.lte(encryptedBid, availableEscrow)) {
-            revert BidExceedsEscrow(auctionId, msg.sender);
-        }
+        shieldedEscrowVault.verifyBidCoverageProof(commitmentHash, encryptedBid, coverageDeadline, coverageProof);
 
         if (_shieldedEncryptedBids[auctionId][commitmentHash] == bytes32(0)) {
             auction.bidCount += 1;
@@ -559,12 +585,12 @@ contract FhenixFairMarket is
 
     function submitShieldedResolution(
         uint256 auctionId,
-        bytes32 winnerCommitmentHash,
+        bytes32 winnerIdentityHash,
         bytes32 winnerCiphertext,
         uint256 winningAmount,
         bytes calldata avsProof
     ) external nonReentrant onlyOwner auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.RESOLVING) returns (bool) {
-        return _submitShieldedResolution(auctionId, winnerCommitmentHash, winnerCiphertext, winningAmount, avsProof);
+        return _submitShieldedResolution(auctionId, winnerIdentityHash, winnerCiphertext, winningAmount, avsProof);
     }
 
     function cancelAuction(uint256 auctionId)
@@ -579,7 +605,7 @@ contract FhenixFairMarket is
         }
 
         Auction storage auction = _auctions[auctionId];
-        auction.slashAmount = _computeCancellationSlash(auction);
+        auction.slashAmount = _computeCancellationSlash(auctionId, auction);
         _observeNetwork();
         _transitionState(auctionId, AuctionState.CANCELLED);
         _registerSlash(auctionId, auction.totalEscrow, auction.slashAmount);
@@ -720,11 +746,44 @@ contract FhenixFairMarket is
             revert ZeroAddress();
         }
 
-        bytes32 expectedCommitmentHash = _winningCommitments[auctionId];
+        bytes32 winningIdentityHash = _winningCommitments[auctionId];
+        bytes32 expectedCommitmentHash = _resolveShieldedCommitment(auctionId, winningIdentityHash);
         bytes32 providedCommitmentHash = keccak256(abi.encodePacked(secret, nullifier));
         if (expectedCommitmentHash == bytes32(0) || providedCommitmentHash != expectedCommitmentHash) {
             revert UnauthorizedShieldedAssetClaim(auctionId, providedCommitmentHash, expectedCommitmentHash);
         }
+
+        auction.assetClaimed = true;
+        NFTGuard.releaseFromEscrow(auction.nftContract, address(this), recipient, auction.tokenId);
+
+        emit AssetClaimed(auctionId, recipient, auction.tokenId);
+    }
+
+    function claimShieldedAssetWithAuthorization(
+        uint256 auctionId,
+        bytes32 winnerIdentityHash,
+        address recipient,
+        uint256 deadline,
+        bytes calldata signature
+    ) external nonReentrant auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.FINALIZED) {
+        Auction storage auction = _auctions[auctionId];
+        if (auction.assetClaimed) {
+            revert AssetAlreadyClaimed(auctionId);
+        }
+        if (recipient == address(0)) {
+            revert ZeroAddress();
+        }
+        if (address(shieldedEscrowVault).code.length < 1) {
+            revert ShieldedEscrowVaultNotConfigured();
+        }
+
+        bytes32 expectedIdentityHash = _winningCommitments[auctionId];
+        if (expectedIdentityHash == bytes32(0) || winnerIdentityHash != expectedIdentityHash) {
+            revert UnauthorizedShieldedIdentityClaim(auctionId, winnerIdentityHash, expectedIdentityHash);
+        }
+
+        bytes32 commitmentHash = _resolveShieldedCommitment(auctionId, winnerIdentityHash);
+        shieldedEscrowVault.authorizeAssetClaim(auctionId, commitmentHash, recipient, deadline, signature);
 
         auction.assetClaimed = true;
         NFTGuard.releaseFromEscrow(auction.nftContract, address(this), recipient, auction.tokenId);
@@ -755,10 +814,6 @@ contract FhenixFairMarket is
         }
 
         _shieldedRefundClaimed[auctionId][nullifierHash] = true;
-        if (auction.state == AuctionState.CANCELLED || auction.state == AuctionState.VOIDED) {
-            compensation = slashedPot.claimForKey(auctionId, nullifierHash, recipient, escrowContribution);
-        }
-
         emit ShieldedRefundSettled(auctionId, nullifierHash, recipient, escrowContribution, compensation);
     }
 
@@ -948,7 +1003,7 @@ contract FhenixFairMarket is
         }
 
         if (auction.state == AuctionState.VOIDED) {
-            if (auction.totalEscrow == 0) {
+            if (!_hasAnyEscrow(auctionId, auction)) {
                 return finalizeReward >= auction.sellerDeposit ? 0 : auction.sellerDeposit - finalizeReward;
             }
 
@@ -1032,7 +1087,7 @@ contract FhenixFairMarket is
 
     function _submitShieldedResolution(
         uint256 auctionId,
-        bytes32 winnerCommitmentHash,
+        bytes32 winnerIdentityHash,
         bytes32 winnerCiphertext,
         uint256 winningAmount,
         bytes calldata avsProof
@@ -1045,20 +1100,15 @@ contract FhenixFairMarket is
         if (address(settlementEngine) == address(0)) {
             revert InvalidAVSProof(auctionId, request.requestId);
         }
-        _validateShieldedResolutionBid(
-            auctionId,
-            winnerCommitmentHash,
-            winnerCiphertext,
-            winningAmount,
-            auction.startingPrice
-        );
+        bytes32 winnerCommitmentHash =
+            _validateShieldedResolutionBid(auctionId, winnerIdentityHash, winnerCiphertext, winningAmount, auction.startingPrice);
 
         if (
             !settlementEngine.verifyShieldedResolutionProof(
                 address(this),
                 auctionId,
                 request.requestId,
-                winnerCommitmentHash,
+                winnerIdentityHash,
                 winnerCiphertext,
                 winningAmount,
                 avsProof
@@ -1073,7 +1123,8 @@ contract FhenixFairMarket is
         auction.winner = address(0);
         auction.winnerCiphertext = winnerCiphertext;
         auction.winningAmount = winningAmount;
-        _winningCommitments[auctionId] = winnerCommitmentHash;
+        _winningCommitments[auctionId] = winnerIdentityHash;
+        shieldedIdentityRegistry.markWinningIdentity(auctionId, winnerIdentityHash);
         delete _resolutionRequests[auctionId];
         _observeNetwork();
 
@@ -1085,13 +1136,13 @@ contract FhenixFairMarket is
 
     function _validateShieldedResolutionBid(
         uint256 auctionId,
-        bytes32 winnerCommitmentHash,
+        bytes32 winnerIdentityHash,
         bytes32 winnerCiphertext,
         uint256 winningAmount,
         uint256 startingPrice
-    ) internal view {
-        if (winnerCommitmentHash == bytes32(0)) {
-            revert InvalidCommitmentHash();
+    ) internal view returns (bytes32 winnerCommitmentHash) {
+        if (winnerIdentityHash == bytes32(0)) {
+            revert InvalidIdentityHash();
         }
         if (winningAmount == 0) {
             revert ZeroWinningAmount(auctionId, address(0));
@@ -1099,23 +1150,35 @@ contract FhenixFairMarket is
         if (winningAmount < startingPrice) {
             revert WinningAmountBelowStartingPrice(auctionId, winningAmount, startingPrice);
         }
-        if (_shieldedEncryptedBids[auctionId][winnerCommitmentHash] == bytes32(0)) {
+        winnerCommitmentHash = _resolveShieldedCommitment(auctionId, winnerIdentityHash);
+        bytes32 storedBid = _shieldedEncryptedBids[auctionId][winnerCommitmentHash];
+        if (storedBid == bytes32(0)) {
             revert MissingShieldedEncryptedBid(auctionId, winnerCommitmentHash);
+        }
+        if (storedBid != winnerCiphertext) {
+            revert UnexpectedShieldedWinningCiphertext(auctionId, storedBid, winnerCiphertext);
         }
         if (address(shieldedEscrowVault).code.length < 1) {
             revert ShieldedEscrowVaultNotConfigured();
         }
 
-        (uint256 commitmentAuctionId, uint256 availableEscrow,, bool claimed) =
-            shieldedEscrowVault.previewCommitment(winnerCommitmentHash);
-        if (commitmentAuctionId != auctionId || availableEscrow == 0 || claimed) {
+        (uint256 commitmentAuctionId,, bool claimed) = shieldedEscrowVault.commitmentState(winnerCommitmentHash);
+        if (commitmentAuctionId != auctionId || claimed) {
             revert MissingShieldedEncryptedBid(auctionId, winnerCommitmentHash);
         }
-        if (!cofheAdapter.lte(winnerCiphertext, availableEscrow)) {
-            revert BidExceedsEscrow(auctionId, address(0));
+    }
+
+    function _resolveShieldedCommitment(uint256 auctionId, bytes32 identityHash) internal view returns (bytes32 commitmentHash) {
+        if (identityHash == bytes32(0)) {
+            revert InvalidIdentityHash();
         }
-        if (winningAmount > availableEscrow) {
-            revert InvalidWinningAmount(auctionId, winningAmount, availableEscrow);
+        if (address(shieldedIdentityRegistry).code.length < 1) {
+            revert ShieldedIdentityRegistryNotConfigured();
+        }
+
+        commitmentHash = shieldedIdentityRegistry.commitmentForIdentity(auctionId, identityHash);
+        if (commitmentHash == bytes32(0)) {
+            revert MissingShieldedEncryptedBid(auctionId, identityHash);
         }
     }
 
@@ -1193,12 +1256,19 @@ contract FhenixFairMarket is
         if (slashAmount < 1) {
             return;
         }
+        uint256 publicSlashAllocation = slashAmount;
+        if (address(shieldedEscrowVault).code.length > 0) {
+            publicSlashAllocation = shieldedEscrowVault.allocateSlash{value: slashAmount}(auctionId, totalEscrow);
+        }
+        if (publicSlashAllocation < 1) {
+            return;
+        }
         if (address(slashedPot).code.length < 1) {
             revert SlashedPotNotConfigured();
         }
 
         // slither-disable-next-line arbitrary-send-eth
-        slashedPot.registerSlash{value: slashAmount}(auctionId, totalEscrow);
+        slashedPot.registerSlash{value: publicSlashAllocation}(auctionId, totalEscrow);
     }
 
     function _computeWinningRefund(uint256 escrowContribution, uint256 winningAmount) internal view returns (uint256) {
@@ -1225,8 +1295,8 @@ contract FhenixFairMarket is
         return settlementEngine.computeSellerCancellationPayout(sellerDeposit, slashAmount);
     }
 
-    function _computeCancellationSlash(Auction storage auction) internal view returns (uint256) {
-        if (auction.totalEscrow == 0) {
+    function _computeCancellationSlash(uint256 auctionId, Auction storage auction) internal view returns (uint256) {
+        if (!_hasAnyEscrow(auctionId, auction)) {
             return 0;
         }
         if (address(settlementEngine) == address(0)) {
@@ -1235,8 +1305,20 @@ contract FhenixFairMarket is
 
         uint256 elapsed = block.timestamp - auction.createdAt;
         uint256 duration = uint256(auction.endTime) - auction.createdAt;
+        uint256 slashEligibilityEscrow = auction.totalEscrow == 0 ? 1 : auction.totalEscrow;
 
-        return settlementEngine.computeCancellationSlash(auction.sellerDeposit, elapsed, duration, auction.totalEscrow);
+        return settlementEngine.computeCancellationSlash(auction.sellerDeposit, elapsed, duration, slashEligibilityEscrow);
+    }
+
+    function _hasAnyEscrow(uint256 auctionId, Auction storage auction) internal view returns (bool) {
+        if (auction.totalEscrow != 0) {
+            return true;
+        }
+        if (address(shieldedEscrowVault).code.length < 1) {
+            return false;
+        }
+
+        return shieldedEscrowVault.hasEscrowForAuction(auctionId);
     }
 
     function _computeFinalizeReward(uint256 sellerDeposit) internal pure returns (uint256) {

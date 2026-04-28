@@ -2,7 +2,7 @@ import "dotenv/config";
 
 import { createServer } from "node:http";
 
-import { AbiCoder, Contract, JsonRpcProvider, Wallet, WebSocketProvider, ZeroAddress, getBytes, parseUnits } from "ethers";
+import { AbiCoder, Contract, JsonRpcProvider, Wallet, WebSocketProvider, ZeroAddress, ZeroHash, getBytes, parseUnits } from "ethers";
 
 import { createKeeperConfigFromEnv } from "./config";
 import { AuctionMonitor, estimateFinalizeReward, type AuctionFinalizer, type MarketMonitorReader } from "./services/auctionMonitor";
@@ -32,9 +32,10 @@ const MARKET_ABI = [
   "function getShieldedEncryptedBid(uint256 auctionId, bytes32 commitmentHash) view returns (bytes32)",
   "function escrowBalances(uint256 auctionId, address bidder) view returns (uint256)",
   "function shieldedEscrowVault() view returns (address)",
+  "function shieldedIdentityRegistry() view returns (address)",
   "function triggerFinalize(uint256 auctionId) external",
   "function submitResolution(uint256 auctionId, address winner, bytes32 winnerCiphertext, uint256 winningAmount, bytes avsProof) external returns (bool)",
-  "function submitShieldedResolution(uint256 auctionId, bytes32 winnerCommitmentHash, bytes32 winnerCiphertext, uint256 winningAmount, bytes avsProof) external returns (bool)"
+  "function submitShieldedResolution(uint256 auctionId, bytes32 winnerIdentityHash, bytes32 winnerCiphertext, uint256 winningAmount, bytes avsProof) external returns (bool)"
 ];
 
 const AVS_ABI = [
@@ -43,8 +44,14 @@ const AVS_ABI = [
 ];
 
 const SHIELDED_VAULT_ABI = [
-  "function previewCommitment(bytes32 commitmentHash) view returns (uint256 auctionId, uint256 amount, bool refundUnlocked, bool claimed)"
+  "function commitmentState(bytes32 commitmentHash) view returns (uint256 auctionId, bool refundUnlocked, bool claimed)"
 ];
+
+const SHIELDED_IDENTITY_REGISTRY_ABI = [
+  "function identityForCommitment(uint256 auctionId, bytes32 commitmentHash) view returns (bytes32)"
+];
+
+const MAX_SHIELDED_ESCROW = (1n << 96n) - 1n;
 
 type RuntimeMetrics = {
   activeAuctions: number;
@@ -160,6 +167,8 @@ async function startAuctionMonitor(
 
   const rpcProvider = new JsonRpcProvider(config.rpcUrl);
   const readContract = new Contract(config.marketAddress, MARKET_ABI, rpcProvider);
+  const wallet = createWalletOrUndefined(process.env.PRIVATE_KEY, rpcProvider);
+  const privilegedReadContract = wallet ? new Contract(config.marketAddress, MARKET_ABI, wallet) : readContract;
   const monitor = new AuctionMonitor(
     readContract as unknown as MarketMonitorReader,
     config,
@@ -167,7 +176,6 @@ async function startAuctionMonitor(
     lockCoordinator
   );
 
-  const wallet = createWalletOrUndefined(process.env.PRIVATE_KEY, rpcProvider);
   let finalizer: AuctionFinalizer = {
     triggerFinalize: async () => {
       throw new Error("KEEPER private key is not configured");
@@ -200,7 +208,7 @@ async function startAuctionMonitor(
   }
 
   await synchronizeAuctionsFromChain(readContract, monitor, store);
-  await enqueuePendingResolutionJobs(readContract, monitor, store);
+  await enqueuePendingResolutionJobs(privilegedReadContract, monitor, store);
 
   setInterval(async () => {
     const startedAt = Date.now();
@@ -209,7 +217,7 @@ async function startAuctionMonitor(
       await synchronizeAuctionsFromChain(readContract, monitor, store);
       const results = await monitor.executeDueFinalizations("auction-monitor", finalizer);
       await synchronizeAuctionsFromChain(readContract, monitor, store);
-      await enqueuePendingResolutionJobs(readContract, monitor, store);
+      await enqueuePendingResolutionJobs(privilegedReadContract, monitor, store);
 
       applyStoreSnapshot(metrics, await buildStoreMetricsSnapshot(store));
       metrics.lastLoopDurationMs = Date.now() - startedAt;
@@ -660,15 +668,29 @@ async function collectEncryptedBidsFromChain(marketContract: Contract, auctionId
 
   if (shieldedCommitments.length > 0) {
     const shieldedVaultAddress = String(await marketContract.shieldedEscrowVault());
+    const shieldedRegistryAddress = String(await marketContract.shieldedIdentityRegistry());
     if (shieldedVaultAddress && shieldedVaultAddress !== ZeroAddress) {
       const vaultContract = new Contract(shieldedVaultAddress, SHIELDED_VAULT_ABI, marketContract.runner);
+      const registryContract =
+        shieldedRegistryAddress && shieldedRegistryAddress !== ZeroAddress
+          ? new Contract(shieldedRegistryAddress, SHIELDED_IDENTITY_REGISTRY_ABI, marketContract.runner)
+          : undefined;
 
       for (const commitmentHash of shieldedCommitments) {
-        const preview = (await vaultContract.previewCommitment(commitmentHash)) as readonly [bigint, bigint, boolean, boolean];
+        const [commitmentAuctionId, refundUnlocked, claimed] = (await vaultContract.commitmentState(
+          commitmentHash
+        )) as readonly [bigint, boolean, boolean];
+        if (commitmentAuctionId !== auctionId || refundUnlocked || claimed) {
+          continue;
+        }
+        const identityHash =
+          registryContract === undefined
+            ? ZeroHash
+            : String(await registryContract.identityForCommitment(auctionId, commitmentHash));
         bids.push({
-          bidder: commitmentHash,
+          bidder: identityHash === ZeroHash ? commitmentHash : identityHash,
           encryptedBid: await marketContract.getShieldedEncryptedBid(auctionId, commitmentHash),
-          availableEscrow: BigInt(preview[1].toString()),
+          availableEscrow: MAX_SHIELDED_ESCROW,
           isShielded: true
         });
       }

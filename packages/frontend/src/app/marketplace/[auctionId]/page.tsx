@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { CSSProperties } from "react";
 
 import { AuctionActionConsole } from "@/components/auction-action-console";
+import { AuctionSettlementControls } from "@/components/auction-settlement-controls";
 import { SellerAuctionControls } from "@/components/seller-auction-controls";
 import { StatusPill } from "@/components/status-pill";
 import {
@@ -56,9 +57,14 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
           <p className="detail-callout">{auction.settlementNote}</p>
           <div className="hero-actions">
             {auction.onChain ? (
-              <Link className="secondary-action" href="#seller-controls">
-                Seller controls
-              </Link>
+              <>
+                <Link className="secondary-action" href="#settlement-controls">
+                  Settlement controls
+                </Link>
+                <Link className="secondary-action" href="#seller-controls">
+                  Seller controls
+                </Link>
+              </>
             ) : null}
             <Link className="primary-action" href="/marketplace/create">
               Create adjacent lot
@@ -83,6 +89,11 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
 
       {auction.onChain ? (
         <section className="detail-grid">
+          <AuctionSettlementControls
+            auctionState={auction.state}
+            onChain={auction.onChain}
+            sellerAddress={auction.seller}
+          />
           <SellerAuctionControls
             auctionId={auction.id}
             auctionState={auction.state}
@@ -104,7 +115,9 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
             <div>
               <span className="detail-label">Opening bid</span>
               <h2 className="detail-card__value">{auction.openingBidLabel}</h2>
-              <p className="detail-copy detail-card__copy">{auction.escrowLabel}</p>
+              <p className="detail-copy detail-card__copy">
+                {auction.onChain ? "Live sealed-bid escrow magnitudes stay hidden on the public desk." : auction.escrowLabel}
+              </p>
             </div>
             <div>
               <span className="detail-label">Confidentiality</span>

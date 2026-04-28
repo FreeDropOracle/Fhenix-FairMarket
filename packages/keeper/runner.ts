@@ -2,7 +2,7 @@ import "dotenv/config";
 
 import { createServer } from "node:http";
 
-import { AbiCoder, Contract, JsonRpcProvider, Wallet, WebSocketProvider, ZeroAddress, getBytes, parseUnits } from "ethers";
+import { AbiCoder, Contract, JsonRpcProvider, Wallet, WebSocketProvider, ZeroAddress, ZeroHash, getBytes, parseUnits } from "ethers";
 
 import { createKeeperConfigFromEnv } from "./config";
 import { AuctionMonitor, estimateFinalizeReward, type AuctionFinalizer, type MarketMonitorReader } from "./services/auctionMonitor";
@@ -27,15 +27,31 @@ const MARKET_ABI = [
   "function getAuctionStartingPrice(uint256 auctionId) view returns (uint256)",
   "function getResolutionRequest(uint256 auctionId) view returns (bytes32 requestId, bytes32 winnerHandle, bytes32 amountHandle, uint64 requestedAt)",
   "function getBidders(uint256 auctionId) view returns (address[])",
+  "function getShieldedCommitments(uint256 auctionId) view returns (bytes32[])",
   "function getEncryptedBid(uint256 auctionId, address bidder) view returns (bytes32)",
+  "function getShieldedEncryptedBid(uint256 auctionId, bytes32 commitmentHash) view returns (bytes32)",
   "function escrowBalances(uint256 auctionId, address bidder) view returns (uint256)",
+  "function shieldedEscrowVault() view returns (address)",
+  "function shieldedIdentityRegistry() view returns (address)",
   "function triggerFinalize(uint256 auctionId) external",
-  "function submitResolution(uint256 auctionId, address winner, bytes32 winnerCiphertext, uint256 winningAmount, bytes avsProof) external returns (bool)"
+  "function submitResolution(uint256 auctionId, address winner, bytes32 winnerCiphertext, uint256 winningAmount, bytes avsProof) external returns (bool)",
+  "function submitShieldedResolution(uint256 auctionId, bytes32 winnerIdentityHash, bytes32 winnerCiphertext, uint256 winningAmount, bytes avsProof) external returns (bool)"
 ];
 
 const AVS_ABI = [
-  "function computeDigest(address market, uint256 auctionId, bytes32 requestId, address winner, bytes32 winnerCiphertext, uint256 winningAmount) view returns (bytes32)"
+  "function computeDigest(address market, uint256 auctionId, bytes32 requestId, address winner, bytes32 winnerCiphertext, uint256 winningAmount) view returns (bytes32)",
+  "function computeShieldedDigest(address market, uint256 auctionId, bytes32 requestId, bytes32 winnerIdentity, bytes32 winnerCiphertext, uint256 winningAmount) view returns (bytes32)"
 ];
+
+const SHIELDED_VAULT_ABI = [
+  "function commitmentState(bytes32 commitmentHash) view returns (uint256 auctionId, bool refundUnlocked, bool claimed)"
+];
+
+const SHIELDED_IDENTITY_REGISTRY_ABI = [
+  "function identityForCommitment(uint256 auctionId, bytes32 commitmentHash) view returns (bytes32)"
+];
+
+const MAX_SHIELDED_ESCROW = (1n << 96n) - 1n;
 
 type RuntimeMetrics = {
   activeAuctions: number;
@@ -151,6 +167,8 @@ async function startAuctionMonitor(
 
   const rpcProvider = new JsonRpcProvider(config.rpcUrl);
   const readContract = new Contract(config.marketAddress, MARKET_ABI, rpcProvider);
+  const wallet = createWalletOrUndefined(process.env.PRIVATE_KEY, rpcProvider);
+  const privilegedReadContract = wallet ? new Contract(config.marketAddress, MARKET_ABI, wallet) : readContract;
   const monitor = new AuctionMonitor(
     readContract as unknown as MarketMonitorReader,
     config,
@@ -158,7 +176,6 @@ async function startAuctionMonitor(
     lockCoordinator
   );
 
-  const wallet = createWalletOrUndefined(process.env.PRIVATE_KEY, rpcProvider);
   let finalizer: AuctionFinalizer = {
     triggerFinalize: async () => {
       throw new Error("KEEPER private key is not configured");
@@ -191,7 +208,7 @@ async function startAuctionMonitor(
   }
 
   await synchronizeAuctionsFromChain(readContract, monitor, store);
-  await enqueuePendingResolutionJobs(readContract, monitor, store);
+  await enqueuePendingResolutionJobs(privilegedReadContract, monitor, store);
 
   setInterval(async () => {
     const startedAt = Date.now();
@@ -200,7 +217,7 @@ async function startAuctionMonitor(
       await synchronizeAuctionsFromChain(readContract, monitor, store);
       const results = await monitor.executeDueFinalizations("auction-monitor", finalizer);
       await synchronizeAuctionsFromChain(readContract, monitor, store);
-      await enqueuePendingResolutionJobs(readContract, monitor, store);
+      await enqueuePendingResolutionJobs(privilegedReadContract, monitor, store);
 
       applyStoreSnapshot(metrics, await buildStoreMetricsSnapshot(store));
       metrics.lastLoopDurationMs = Date.now() - startedAt;
@@ -251,7 +268,8 @@ async function startDispatcher(
         await store.storeResolutionArtifact({
           requestId: resolution.requestId,
           auctionId: resolution.auctionId,
-          winner: normalizeWinnerAddress(resolution.winner),
+          winner: normalizeWinnerIdentity(resolution.winnerKind, resolution.winner),
+          winnerKind: resolution.winnerKind,
           winnerCiphertext: resolution.winnerCiphertext,
           avsProof: resolution.avsProof,
           winningAmount: resolution.winningAmount,
@@ -333,23 +351,41 @@ async function startAvsSubmitter(
 
       if (writer && digestReader && operatorSigners.length >= config.avsThreshold) {
         for (const artifact of pendingArtifacts) {
+          const currentState = await writer.getAuctionState(artifact.auctionId);
+          if (currentState !== 2n) {
+            await store.updateAuctionState(artifact.auctionId, currentState, Date.now());
+            await store.markResolutionArtifactSubmitted(artifact.requestId, Date.now());
+            continue;
+          }
+
           const payload: AttestationPayload = {
             auctionId: artifact.auctionId,
             requestId: artifact.requestId,
             winner: artifact.winner,
+            winnerKind: artifact.winnerKind ?? "public",
             winnerCiphertext: artifact.winnerCiphertext,
             winningAmount: artifact.winningAmount
           };
 
           try {
-            const digest = await digestReader.computeDigest(
-              config.marketAddress,
-              payload.auctionId,
-              payload.requestId,
-              payload.winner,
-              payload.winnerCiphertext,
-              payload.winningAmount
-            );
+            const digest =
+              payload.winnerKind === "shielded"
+                ? await digestReader.computeShieldedDigest(
+                    config.marketAddress,
+                    payload.auctionId,
+                    payload.requestId,
+                    payload.winner,
+                    payload.winnerCiphertext,
+                    payload.winningAmount
+                  )
+                : await digestReader.computeDigest(
+                    config.marketAddress,
+                    payload.auctionId,
+                    payload.requestId,
+                    payload.winner,
+                    payload.winnerCiphertext,
+                    payload.winningAmount
+                  );
 
             const proof = await submitter.submitVerifiedResolution(payload, payload, digest, operatorSigners, writer);
             await store.markResolutionArtifactSubmitted(artifact.requestId, Date.now());
@@ -358,6 +394,13 @@ async function startAvsSubmitter(
               `[keeper] submitted resolution ${artifact.requestId} for auction ${artifact.auctionId.toString()} with ${proof.signerCount} AVS signatures`
             );
           } catch (error) {
+            const refreshedState = await writer.getAuctionState(artifact.auctionId).catch(() => undefined);
+            if (refreshedState !== undefined && refreshedState !== 2n) {
+              await store.updateAuctionState(artifact.auctionId, refreshedState, Date.now());
+              await store.markResolutionArtifactSubmitted(artifact.requestId, Date.now());
+              continue;
+            }
+
             const reason = error instanceof Error ? error.message : String(error);
             await submitter.recordSlashingViolation(artifact.requestId, artifact.auctionId, reason, operatorSigners.map((operator) => operator.address));
             throw error;
@@ -391,10 +434,23 @@ class EthersAuctionFinalizer implements AuctionFinalizer {
   ): Promise<{ txHash?: string; gasUsed?: bigint; incentiveWei?: bigint }> {
     const auction = await this.contract.getAuction(auctionId);
     const rewardEstimate = estimateFinalizeReward(BigInt(auction[4].toString()));
-
-    const tx = await this.contract.triggerFinalize(auctionId, {
+    const feeOverrides = {
       maxPriorityFeePerGas: parseUnits(options.priorityFeeGwei.toString(), "gwei")
-    });
+    };
+
+    let tx;
+    try {
+      tx = await this.contract.triggerFinalize(auctionId, feeOverrides);
+    } catch (error) {
+      if (!shouldRetryFinalizeWithManualGas(error)) {
+        throw error;
+      }
+
+      tx = await this.contract.triggerFinalize(auctionId, {
+        ...feeOverrides,
+        gasLimit: 800_000n
+      });
+    }
     const receipt = await tx.wait();
 
     return {
@@ -408,25 +464,92 @@ class EthersAuctionFinalizer implements AuctionFinalizer {
 class EthersResolutionWriter {
   constructor(private readonly contract: Contract) {}
 
-  async submitResolution(payload: AttestationPayload, proof: AttestationProofEnvelope): Promise<{ txHash?: string }> {
-    const encodedProof = AbiCoder.defaultAbiCoder().encode(
-      [
-        "tuple(uint256 auctionId, bytes32 requestId, address winner, bytes32 winnerCiphertext, uint256 winningAmount, address[] operators, bytes[] signatures)"
-      ],
-      [[payload.auctionId, payload.requestId, payload.winner, payload.winnerCiphertext, payload.winningAmount, proof.operators, proof.signatures]]
-    );
+  async getAuctionState(auctionId: bigint): Promise<bigint> {
+    const auction = await this.contract.getAuction(auctionId);
+    return BigInt(auction[5].toString());
+  }
 
-    const tx = await this.contract["submitResolution(uint256,address,bytes32,uint256,bytes)"](
-      payload.auctionId,
-      payload.winner,
-      payload.winnerCiphertext,
-      payload.winningAmount,
-      encodedProof
-    );
+  async submitResolution(payload: AttestationPayload, proof: AttestationProofEnvelope): Promise<{ txHash?: string }> {
+    const tx =
+      payload.winnerKind === "shielded"
+        ? await this.contract.submitShieldedResolution(
+            payload.auctionId,
+            payload.winner,
+            payload.winnerCiphertext,
+            payload.winningAmount,
+            AbiCoder.defaultAbiCoder().encode(
+              [
+                "tuple(uint256 auctionId, bytes32 requestId, bytes32 winnerIdentity, bytes32 winnerCiphertext, uint256 winningAmount, address[] operators, bytes[] signatures)"
+              ],
+              [
+                [
+                  payload.auctionId,
+                  payload.requestId,
+                  payload.winner,
+                  payload.winnerCiphertext,
+                  payload.winningAmount,
+                  proof.operators,
+                  proof.signatures
+                ]
+              ]
+            )
+          )
+        : await this.contract["submitResolution(uint256,address,bytes32,uint256,bytes)"](
+            payload.auctionId,
+            payload.winner,
+            payload.winnerCiphertext,
+            payload.winningAmount,
+            AbiCoder.defaultAbiCoder().encode(
+              [
+                "tuple(uint256 auctionId, bytes32 requestId, address winner, bytes32 winnerCiphertext, uint256 winningAmount, address[] operators, bytes[] signatures)"
+              ],
+              [
+                [
+                  payload.auctionId,
+                  payload.requestId,
+                  payload.winner,
+                  payload.winnerCiphertext,
+                  payload.winningAmount,
+                  proof.operators,
+                  proof.signatures
+                ]
+              ]
+            )
+          );
 
     await tx.wait();
     return { txHash: tx.hash };
   }
+}
+
+function shouldRetryFinalizeWithManualGas(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error as {
+    code?: string;
+    shortMessage?: string;
+    message?: string;
+    info?: { error?: { code?: number; message?: string } };
+  };
+
+  if (candidate.code === "UNPREDICTABLE_GAS_LIMIT") {
+    return true;
+  }
+  if (candidate.code === "CALL_EXCEPTION" && !candidate.info?.error?.code) {
+    return true;
+  }
+
+  const combinedMessage = [
+    candidate.shortMessage,
+    candidate.message,
+    candidate.info?.error?.message
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+
+  return /estimateGas|missing revert data|execution reverted/i.test(combinedMessage);
 }
 
 class StoreBackedDispatchQueue implements BatchDispatchQueue {
@@ -531,14 +654,47 @@ async function enqueuePendingResolutionJobs(
 
 async function collectEncryptedBidsFromChain(marketContract: Contract, auctionId: bigint): Promise<StoredDispatchJob["bids"]> {
   const bidders = (await marketContract.getBidders(auctionId)) as string[];
+  const shieldedCommitments = (await marketContract.getShieldedCommitments(auctionId)) as string[];
   const bids: StoredDispatchJob["bids"] = [];
 
   for (const bidder of bidders) {
     bids.push({
       bidder,
       encryptedBid: await marketContract.getEncryptedBid(auctionId, bidder),
-      availableEscrow: BigInt((await marketContract.escrowBalances(auctionId, bidder)).toString())
+      availableEscrow: BigInt((await marketContract.escrowBalances(auctionId, bidder)).toString()),
+      isShielded: false
     });
+  }
+
+  if (shieldedCommitments.length > 0) {
+    const shieldedVaultAddress = String(await marketContract.shieldedEscrowVault());
+    const shieldedRegistryAddress = String(await marketContract.shieldedIdentityRegistry());
+    if (shieldedVaultAddress && shieldedVaultAddress !== ZeroAddress) {
+      const vaultContract = new Contract(shieldedVaultAddress, SHIELDED_VAULT_ABI, marketContract.runner);
+      const registryContract =
+        shieldedRegistryAddress && shieldedRegistryAddress !== ZeroAddress
+          ? new Contract(shieldedRegistryAddress, SHIELDED_IDENTITY_REGISTRY_ABI, marketContract.runner)
+          : undefined;
+
+      for (const commitmentHash of shieldedCommitments) {
+        const [commitmentAuctionId, refundUnlocked, claimed] = (await vaultContract.commitmentState(
+          commitmentHash
+        )) as readonly [bigint, boolean, boolean];
+        if (commitmentAuctionId !== auctionId || refundUnlocked || claimed) {
+          continue;
+        }
+        const identityHash =
+          registryContract === undefined
+            ? ZeroHash
+            : String(await registryContract.identityForCommitment(auctionId, commitmentHash));
+        bids.push({
+          bidder: identityHash === ZeroHash ? commitmentHash : identityHash,
+          encryptedBid: await marketContract.getShieldedEncryptedBid(auctionId, commitmentHash),
+          availableEscrow: MAX_SHIELDED_ESCROW,
+          isShielded: true
+        });
+      }
+    }
   }
 
   return bids;
@@ -556,8 +712,15 @@ function isValidPrivateKey(rawPrivateKey: string | undefined): rawPrivateKey is 
   return rawPrivateKey !== undefined && /^0x[0-9a-fA-F]{64}$/.test(rawPrivateKey);
 }
 
-function normalizeWinnerAddress(winner: string | null): string {
-  return winner === null || winner.trim() === "" ? ZeroAddress : winner;
+function normalizeWinnerIdentity(
+  winnerKind: "public" | "shielded" | "none",
+  winner: string | null
+): string {
+  if (winner === null || winner.trim() === "") {
+    return winnerKind === "shielded" ? ZeroAddress : ZeroAddress;
+  }
+
+  return winner;
 }
 
 async function buildStoreMetricsSnapshot(store: AuctionStateStore): Promise<{

@@ -214,6 +214,33 @@ async function main(): Promise<void> {
     assert.equal(resolution.winningAmount, 0n);
   });
 
+  await runCase("cofhe dispatcher supports 96-bit confidential bids for live wei-sized amounts", async () => {
+    const dispatcher = new CofheDispatcher(new InMemoryDispatchQueue(), () => 3_000);
+    const winningAmount = 1250000000000000000n;
+    const resolution = await dispatcher.dispatch({
+      auctionId: 88n,
+      requestId: "request-live-wei",
+      winnerHandle: "winner-request-live-wei",
+      amountHandle: "amount-request-live-wei",
+      startingPrice: 900000000000000000n,
+      bids: [
+        {
+          bidder: "0x00000000000000000000000000000000000000aa",
+          encryptedBid: encodeEncryptedUint96(winningAmount),
+          availableEscrow: winningAmount + 500000000000000000n
+        },
+        {
+          bidder: "0x00000000000000000000000000000000000000bb",
+          encryptedBid: encodeEncryptedUint96(1150000000000000000n),
+          availableEscrow: winningAmount + 500000000000000000n
+        }
+      ]
+    });
+
+    assert.equal(resolution.winner, "0x00000000000000000000000000000000000000aa");
+    assert.equal(resolution.winningAmount, winningAmount);
+  });
+
   await runCase("avs submitter aggregates signatures, validates fraud proofs, and writes symbolic slashing logs", async () => {
     const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "ffm-keeper-"));
     const slashingLogPath = path.join(tempDirectory, "slashing.json");
@@ -300,6 +327,10 @@ function buildJob(auctionId: bigint, requestId: string, amount: bigint, starting
 
 function encodeEncryptedUint32(amount: bigint): string {
   return ((1n << 248n) | amount).toString();
+}
+
+function encodeEncryptedUint96(amount: bigint): string {
+  return ((3n << 248n) | amount).toString();
 }
 
 main().catch((error) => {

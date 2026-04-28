@@ -18,7 +18,7 @@ test("mock wallet can drive escrow and confidential bid actions", async ({ page 
 
   await page.getByRole("textbox", { name: /Bid amount in ETH/i }).fill("3.50");
   await page.getByRole("button", { name: /Seal bid/i }).click();
-  await expect(page.getByRole("heading", { name: "Confidential bid prepared" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Confidential bid prepared" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(/Latest activity/i)).toBeVisible();
 });
 

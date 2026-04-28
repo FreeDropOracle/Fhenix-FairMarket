@@ -1,0 +1,24 @@
+{
+  "name": "zk",
+  "private": true,
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "devDependencies": {
+    "snarkjs": "^0.7.6"
+  },
+  "scripts": {
+    "compile": "circom circuits/demo.circom --r1cs --wasm --sym -o build",
+    "pot:init": "pnpm exec snarkjs powersoftau new bn128 12 pot12_0000.ptau",
+    "pot:contribute": "pnpm exec snarkjs powersoftau contribute pot12_0000.ptau pot12_final.ptau --name=\"first contribution\" -v",
+    "pot:prepare": "pnpm exec snarkjs powersoftau prepare phase2 pot12_final.ptau build/pot12_final_phase2.ptau",
+    "setup": "pnpm exec snarkjs groth16 setup build/demo.r1cs build/pot12_final_phase2.ptau build/demo_0000.zkey",
+    "contribute": "pnpm exec snarkjs zkey contribute build/demo_0000.zkey build/demo_final.zkey --name=\"phase1\" -v",
+    "export:vk": "pnpm exec snarkjs zkey export verificationkey build/demo_final.zkey build/verification_key.json",
+    "export:sol": "pnpm exec snarkjs zkey export solidityverifier build/demo_final.zkey build/Verifier.sol",
+    "witness": "corepack pnpm exec -- snarkjs wtns calculate build/demo_js/demo.wasm input.example.json build/witness.wtns",
+    "prove": "pnpm exec snarkjs groth16 prove build/demo_final.zkey build/witness.wtns build/proof.json build/public.json",
+    "verify": "pnpm exec snarkjs groth16 verify build/verification_key.json build/public.json build/proof.json"
+  }
+}

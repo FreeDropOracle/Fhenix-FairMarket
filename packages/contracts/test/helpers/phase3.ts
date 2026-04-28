@@ -1,8 +1,10 @@
-import { AbiCoder, getBytes, type Signer } from "ethers";
+import { AbiCoder, ZeroHash, getBytes, type Signer } from "ethers";
 
 import { AuctionMonitor } from "../../../keeper/services/auctionMonitor";
 import { AvsSubmitter } from "../../../keeper/services/avsSubmitter";
 import { CofheDispatcher, type EncryptedBidRecord } from "../../../keeper/services/cofheDispatcher";
+
+const MAX_SHIELDED_ESCROW = (1n << 96n) - 1n;
 
 export async function collectEncryptedBids(
   market: {
@@ -24,6 +26,63 @@ export async function collectEncryptedBids(
   }
 
   return bids;
+}
+
+export async function collectShieldedEncryptedBids(
+  market: {
+    getShieldedCommitments(auctionId: bigint): Promise<readonly string[]>;
+    getShieldedEncryptedBid(auctionId: bigint, commitmentHash: string): Promise<string>;
+  },
+  vault: {
+    commitmentState(commitmentHash: string): Promise<readonly [bigint, boolean, boolean]>;
+  },
+  registry: {
+    identityForCommitment(auctionId: bigint, commitmentHash: string): Promise<string>;
+  } | undefined,
+  auctionId: bigint
+): Promise<EncryptedBidRecord[]> {
+  const commitments = await market.getShieldedCommitments(auctionId);
+  const bids: EncryptedBidRecord[] = [];
+
+  for (const commitmentHash of commitments) {
+    const [commitmentAuctionId, refundUnlocked, claimed] = await vault.commitmentState(commitmentHash);
+    if (commitmentAuctionId !== auctionId || refundUnlocked || claimed) {
+      continue;
+    }
+    const identityHash = registry ? await registry.identityForCommitment(auctionId, commitmentHash) : ZeroHash;
+    bids.push({
+      bidder: identityHash === ZeroHash ? commitmentHash : identityHash,
+      encryptedBid: await market.getShieldedEncryptedBid(auctionId, commitmentHash),
+      availableEscrow: MAX_SHIELDED_ESCROW,
+      isShielded: true
+    });
+  }
+
+  return bids;
+}
+
+export async function collectAllEncryptedBids(
+  market: {
+    getBidders(auctionId: bigint): Promise<readonly string[]>;
+    getEncryptedBid(auctionId: bigint, bidder: string): Promise<string>;
+    escrowBalances(auctionId: bigint, bidder: string): Promise<bigint>;
+    getShieldedCommitments(auctionId: bigint): Promise<readonly string[]>;
+    getShieldedEncryptedBid(auctionId: bigint, commitmentHash: string): Promise<string>;
+  },
+  vault: {
+    commitmentState(commitmentHash: string): Promise<readonly [bigint, boolean, boolean]>;
+  },
+  registry: {
+    identityForCommitment(auctionId: bigint, commitmentHash: string): Promise<string>;
+  } | undefined,
+  auctionId: bigint
+): Promise<EncryptedBidRecord[]> {
+  const [publicBids, shieldedBids] = await Promise.all([
+    collectEncryptedBids(market, auctionId),
+    collectShieldedEncryptedBids(market, vault, registry, auctionId)
+  ]);
+
+  return [...publicBids, ...shieldedBids];
 }
 
 export async function buildPhase3ResolutionProof(
@@ -95,6 +154,102 @@ export async function buildPhase3ResolutionProof(
         proofEnvelope.auctionId,
         proofEnvelope.requestId,
         proofEnvelope.winner,
+        proofEnvelope.winnerCiphertext,
+        proofEnvelope.winningAmount,
+        proofEnvelope.operators,
+        proofEnvelope.signatures
+      ]
+    ]
+  );
+
+  return {
+    request,
+    resolution,
+    payload,
+    proof
+  };
+}
+
+export async function buildShieldedResolutionProof(
+  market: {
+    getAddress(): Promise<string>;
+    getResolutionRequest(auctionId: bigint): Promise<readonly [string, string, string, bigint]>;
+    getAuction(auctionId: bigint): Promise<readonly unknown[]>;
+    getAuctionStartingPrice(auctionId: bigint): Promise<bigint>;
+  },
+  avs: {
+    computeShieldedDigest(
+      market: string,
+      auctionId: bigint,
+      requestId: string,
+      winnerIdentity: string,
+      winnerCiphertext: string,
+      winningAmount: bigint
+    ): Promise<string>;
+  },
+  auctionId: bigint,
+  bidders: EncryptedBidRecord[],
+  operators: readonly Signer[]
+) {
+  const monitor = new AuctionMonitor(market);
+  const request = await monitor.inspectTriggeredAuction(auctionId);
+  const dispatcher = new CofheDispatcher();
+  const resolution = await dispatcher.dispatch({
+    auctionId,
+    requestId: request.requestId,
+    winnerHandle: request.winnerHandle,
+    amountHandle: request.amountHandle,
+    startingPrice: await market.getAuctionStartingPrice(auctionId),
+    bids: bidders
+  });
+
+  if (resolution.winner === null) {
+    throw new Error("Shielded resolution requires a non-empty winner identity");
+  }
+
+  const payload = {
+    auctionId,
+    requestId: request.requestId,
+    winnerIdentity: resolution.winner,
+    winnerCiphertext: resolution.winnerCiphertext,
+    winningAmount: resolution.winningAmount
+  };
+
+  const digest = await avs.computeShieldedDigest(
+    await market.getAddress(),
+    payload.auctionId,
+    payload.requestId,
+    payload.winnerIdentity,
+    payload.winnerCiphertext,
+    payload.winningAmount
+  );
+
+  const submitter = new AvsSubmitter(2);
+  const proofEnvelope = await submitter.collectProof(
+    {
+      auctionId: payload.auctionId,
+      requestId: payload.requestId,
+      winner: payload.winnerIdentity,
+      winnerCiphertext: payload.winnerCiphertext,
+      winningAmount: payload.winningAmount,
+      winnerKind: "shielded"
+    },
+    digest,
+    operators.map((operator) => ({
+      address: (operator as unknown as { address: string }).address,
+      signDigest: async (requestedDigest: string) => operator.signMessage(getBytes(requestedDigest))
+    }))
+  );
+
+  const proof = AbiCoder.defaultAbiCoder().encode(
+    [
+      "tuple(uint256 auctionId, bytes32 requestId, bytes32 winnerIdentity, bytes32 winnerCiphertext, uint256 winningAmount, address[] operators, bytes[] signatures)"
+    ],
+    [
+      [
+        proofEnvelope.auctionId,
+        proofEnvelope.requestId,
+        payload.winnerIdentity,
         proofEnvelope.winnerCiphertext,
         proofEnvelope.winningAmount,
         proofEnvelope.operators,

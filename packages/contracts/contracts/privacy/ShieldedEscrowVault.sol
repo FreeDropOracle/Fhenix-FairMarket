@@ -183,8 +183,12 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
             IShieldedRefundSource(market).settleShieldedRefund(commitment.auctionId, nullifierHash, recipient, principalAmount);
         (compensationAmount);
 
-        // slither-disable-next-line low-level-calls
+        //slither-disable-start arbitrary-send-eth
+        //slither-disable-start low-level-calls
+        // Intentional refund payout to the authorized recipient for this settled shielded note.
         (bool success,) = recipient.call{value: principalAmount}("");
+        //slither-disable-end low-level-calls
+        //slither-disable-end arbitrary-send-eth
         if (!success) {
             revert NativeTransferFailed(recipient, principalAmount);
         }

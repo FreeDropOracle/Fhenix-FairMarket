@@ -112,8 +112,19 @@ contract SlashedPot is Ownable, ISlashedPot {
         }
 
         emit CompensationClaimed(auctionId, recipient, amount);
-        // slither-disable-next-line low-level-calls
+        //slither-disable-next-line arbitrary-send-eth,low-level-calls
+        //Intentional payment to the recipient as part of a settled compensation claim.
+                emit CompensationClaimed(auctionId, recipient, amount);
+        //slither-disable-start arbitrary-send-eth
+        //slither-disable-start low-level-calls
+        //Intentional payment to the recipient as part of a settled compensation claim.
         (bool success,) = payable(recipient).call{value: amount}("");
+        //slither-disable-end low-level-calls
+        //slither-disable-end arbitrary-send-eth
+        if (!success) {
+            revert NativeTransferFailed(recipient, amount);
+        }
+
         if (!success) {
             revert NativeTransferFailed(recipient, amount);
         }

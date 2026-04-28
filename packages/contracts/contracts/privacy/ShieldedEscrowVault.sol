@@ -133,6 +133,7 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
 
     function setShieldedBidVerifier(address newVerifier) external onlyOwner {
         address previousVerifier = shieldedBidVerifier;
+        // slither-disable-next-line missing-zero-check
         shieldedBidVerifier = newVerifier;
         emit ShieldedBidVerifierUpdated(previousVerifier, newVerifier);
     }
@@ -426,7 +427,9 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
         commitment.amount = 0;
         _auctionTotals[auctionId] = _auctionTotals[auctionId] - principalAmount;
 
-        IShieldedRefundSource(market).settleShieldedRefund(auctionId, compensationKey, recipient, principalAmount);
+        uint256 settledAmount =
+            IShieldedRefundSource(market).settleShieldedRefund(auctionId, compensationKey, recipient, principalAmount);
+        (settledAmount);
 
         // slither-disable-next-line low-level-calls
         (bool success,) = recipient.call{value: principalAmount + compensationAmount}("");

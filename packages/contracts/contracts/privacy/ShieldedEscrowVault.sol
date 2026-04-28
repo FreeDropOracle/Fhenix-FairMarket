@@ -181,6 +181,7 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
 
         compensationAmount =
             IShieldedRefundSource(market).settleShieldedRefund(commitment.auctionId, nullifierHash, recipient, principalAmount);
+        (compensationAmount);
 
         // slither-disable-next-line low-level-calls
         (bool success,) = recipient.call{value: principalAmount}("");

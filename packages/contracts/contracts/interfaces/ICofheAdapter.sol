@@ -8,6 +8,8 @@ interface ICofheAdapter {
 
     function asEuint32(uint32 value) external pure returns (bytes32);
 
+    function asEuint96(uint96 value) external pure returns (bytes32);
+
     function asEbool(bool value) external pure returns (bytes32);
 
     function select(bytes32 conditionCiphertext, bytes32 whenTrueCiphertext, bytes32 whenFalseCiphertext)

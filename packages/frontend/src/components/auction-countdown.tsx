@@ -14,7 +14,7 @@ function formatRemainingLabel(endTimeUnix: number) {
   const remainingSeconds = Math.max(0, Math.floor(endTimeUnix - Date.now() / 1000));
 
   if (remainingSeconds === 0) {
-    return "Ending now";
+    return "Settle now";
   }
 
   const days = Math.floor(remainingSeconds / 86_400);

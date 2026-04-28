@@ -22,8 +22,8 @@ export function AuctionCard({ auction }: AuctionCardProps) {
     "--auction-mist": auction.visual.mist
   };
   const hasLiveCountdown = auction.state === "active" && Boolean(auction.onChain?.endTimeUnix);
-  const detailsHref = auction.onChain ? `/marketplace/${auction.id}#seller-controls` : `/marketplace/${auction.id}`;
-  const detailsLabel = auction.onChain ? "Seller controls" : "Open details";
+  const detailsHref = auction.onChain ? `/marketplace/${auction.id}#settlement-controls` : `/marketplace/${auction.id}`;
+  const detailsLabel = auction.onChain ? "Open live lot" : "Open details";
 
   return (
     <article className="auction-card">

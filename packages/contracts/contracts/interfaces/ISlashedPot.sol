@@ -7,4 +7,8 @@ interface ISlashedPot {
     function previewClaim(uint256 auctionId, uint256 escrowContribution) external view returns (uint256);
 
     function claimFor(uint256 auctionId, address recipient, uint256 escrowContribution) external returns (uint256);
+
+    function claimForKey(uint256 auctionId, bytes32 claimKey, address recipient, uint256 escrowContribution)
+        external
+        returns (uint256);
 }

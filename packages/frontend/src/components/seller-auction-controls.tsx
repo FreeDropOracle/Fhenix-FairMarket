@@ -35,6 +35,10 @@ function formatEthFromWei(value: string) {
   return `${Number.parseFloat(formatEther(BigInt(value))).toFixed(4)} ETH`;
 }
 
+function isEnded(endTimeUnix: number) {
+  return endTimeUnix <= Math.floor(Date.now() / 1000);
+}
+
 export function SellerAuctionControls({
   auctionId,
   auctionState,
@@ -62,7 +66,8 @@ export function SellerAuctionControls({
   const isSeller = Boolean(normalizedAccount && normalizedAccount === normalizedSeller);
   const totalEscrowWei = BigInt(onChain.totalEscrowWei);
   const hasBidderEscrow = totalEscrowWei > 0n;
-  const canCancel = effectiveState === "active";
+  const closeWindowReached = isEnded(onChain.endTimeUnix);
+  const canCancel = effectiveState === "active" && !closeWindowReached;
   const canClaimSellerPayout = effectiveState === "cancelled" && !sellerClaimed && BigInt(sellerPayoutWei) > 0n;
   const isBusy = isCancelling || isClaiming;
   const cancelButtonClassName = `primary-action seller-action${
@@ -241,11 +246,23 @@ export function SellerAuctionControls({
               ? "Working"
               : canCancel
                 ? "Cancellable"
+                : effectiveState === "active" && closeWindowReached
+                  ? "Settlement only"
                 : effectiveState === "cancelled"
                   ? "Cancelled"
                   : "Locked"
           }
-          tone={isBusy ? "warning" : canCancel ? "success" : effectiveState === "cancelled" ? "warning" : "neutral"}
+          tone={
+            isBusy
+              ? "warning"
+              : canCancel
+                ? "success"
+                : effectiveState === "active" && closeWindowReached
+                  ? "warning"
+                  : effectiveState === "cancelled"
+                    ? "warning"
+                    : "neutral"
+          }
           pulse={isBusy}
         />
       </div>
@@ -266,7 +283,9 @@ export function SellerAuctionControls({
           <span className="detail-label">Current exposure</span>
           <h3 className="detail-card__value">{formatEthFromWei(onChain.sellerDepositWei)} seller deposit</h3>
           <p className="detail-copy detail-card__copy">
-            {hasBidderEscrow
+            {effectiveState === "active" && closeWindowReached
+              ? "The close window is over, so seller cancellation is no longer available. Use settlement controls instead."
+              : hasBidderEscrow
               ? `${formatEthFromWei(onChain.totalEscrowWei)} of bidder escrow is already staged. If you cancel now, the NFT returns to you, bidders move to refunds, and the seller payout may be reduced by slash rules.`
               : "No bidder escrow is staged right now. If you cancel now, the NFT returns to you and the seller deposit remains the only claimable payout path."}
           </p>

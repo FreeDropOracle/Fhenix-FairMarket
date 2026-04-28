@@ -19,7 +19,7 @@ describe("FhenixFairMarket Phase 1", function () {
     const { market, adapter, owner } = await loadFixture(deployFixture);
 
     await expect(market.initialize(await adapter.getAddress(), owner.address, ethers.ZeroAddress)).to.be.reverted;
-    expect(await market.contractVersion()).to.equal("phase4");
+    expect(await market.contractVersion()).to.equal("phase4-privacy2");
   });
 
   it("rejects invalid initialization parameters on a fresh implementation", async function () {
@@ -38,6 +38,24 @@ describe("FhenixFairMarket Phase 1", function () {
     await expect(
       rawImplementationB.initialize(await adapter.getAddress(), ethers.ZeroAddress, ethers.ZeroAddress)
     ).to.be.revertedWithCustomError(rawImplementationB, "ZeroAddress");
+  });
+
+  it("allows the owner to rotate the CoFHE adapter for future bid formats", async function () {
+    const { market, owner, bidder } = await loadFixture(deployFixture);
+    const adapterFactory = await ethers.getContractFactory("CofheAdapter");
+    const nextAdapter = await adapterFactory.deploy();
+    await nextAdapter.waitForDeployment();
+
+    await expect(market.connect(bidder).setCofheAdapter(await nextAdapter.getAddress())).to.be.revertedWithCustomError(
+      market,
+      "OwnableUnauthorizedAccount"
+    );
+
+    await expect(market.connect(owner).setCofheAdapter(await nextAdapter.getAddress()))
+      .to.emit(market, "CofheAdapterUpdated")
+      .withArgs(anyValue, await nextAdapter.getAddress());
+
+    expect(await market.cofheAdapter()).to.equal(await nextAdapter.getAddress());
   });
 
   it("creates an auction and transfers the NFT into escrow", async function () {
@@ -198,7 +216,7 @@ describe("FhenixFairMarket Phase 1", function () {
           await nft.getAddress(),
           1n,
           24 * 60 * 60,
-          4_294_967_296n,
+          (1n << 96n),
           ethers.parseEther("1"),
           false,
           {
@@ -206,6 +224,66 @@ describe("FhenixFairMarket Phase 1", function () {
           }
         )
     ).to.be.revertedWithCustomError(market, "InvalidStartingPrice");
+  });
+
+  it("accepts live wei-sized confidential bids through the full settlement path", async function () {
+    const { adapter, avs, avsOperatorOne, avsOperatorTwo, bidder, bidderTwo, market, nft, owner, seller } =
+      await loadFixture(deployFixture);
+
+    const sellerDeposit = ethers.parseEther("1");
+    const startingPrice = ethers.parseEther("0.40");
+    const winnerAmount = ethers.parseEther("0.45");
+    const runnerUpAmount = ethers.parseEther("0.42");
+
+    await nft.connect(seller).mint(seller.address);
+    await nft.connect(seller).approve(await market.getAddress(), 1n);
+    await market
+      .connect(seller)
+      ["createAuction(address,uint256,uint256,uint256,uint256,bool)"](
+        await nft.getAddress(),
+        1n,
+        24 * 60 * 60,
+        startingPrice,
+        sellerDeposit,
+        true,
+        { value: sellerDeposit }
+      );
+
+    await market.connect(bidder).lockEscrow(1n, { value: ethers.parseEther("0.60") });
+    await market.connect(bidderTwo).lockEscrow(1n, { value: ethers.parseEther("0.50") });
+
+    const winnerBid = await adapter.asEuint96(winnerAmount);
+    const runnerUpBid = await adapter.asEuint96(runnerUpAmount);
+
+    await market.connect(bidder).placeBid(1n, winnerBid);
+    await market.connect(bidderTwo).placeBid(1n, runnerUpBid);
+
+    await time.increase(24 * 60 * 60 + 1);
+    await market.triggerFinalize(1n);
+
+    const encryptedBids = await collectEncryptedBids(market, 1n);
+    const { proof } = await buildPhase3ResolutionProof(market, avs, 1n, encryptedBids, [avsOperatorOne, avsOperatorTwo]);
+
+    await expect(
+      market.connect(owner)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
+        1n,
+        bidder.address,
+        winnerBid,
+        winnerAmount,
+        proof
+      )
+    )
+      .to.emit(market, "ResolutionRecorded")
+      .withArgs(1n, bidder.address, winnerBid);
+
+    const auction = await market.getAuction(1n);
+    const sellerPreview = await market.previewSellerPayout(1n);
+    const finalizeReward = (sellerDeposit * 20n) / 10_000n;
+
+    expect(await market.getAuctionStartingPrice(1n)).to.equal(startingPrice);
+    expect(auction[8]).to.equal(winnerBid);
+    expect(auction[9]).to.equal(winnerAmount);
+    expect(sellerPreview).to.equal(sellerDeposit + winnerAmount - finalizeReward);
   });
 
   it("rejects auction creation with zero or mismatched seller deposits", async function () {
@@ -353,7 +431,15 @@ describe("FhenixFairMarket Phase 1", function () {
     const encryptedBids = await collectEncryptedBids(market, 1n);
     const { proof } = await buildPhase3ResolutionProof(market, avs, 1n, encryptedBids, [avsOperatorOne, avsOperatorTwo]);
 
-    await expect(market.connect(owner)["submitResolution(uint256,bytes32,uint256,bytes)"](1n, ethers.ZeroHash, 0n, proof))
+    await expect(
+      market.connect(owner)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
+        1n,
+        ethers.ZeroAddress,
+        ethers.ZeroHash,
+        0n,
+        proof
+      )
+    )
       .to.emit(market, "ResolutionRecorded")
       .withArgs(1n, ethers.ZeroAddress, ethers.ZeroHash);
 
@@ -373,8 +459,9 @@ describe("FhenixFairMarket Phase 1", function () {
     const { proof } = await buildPhase3ResolutionProof(market, avs, 1n, encryptedBids, [avsOperatorOne, avsOperatorTwo]);
 
     await expect(
-      market.connect(owner)["submitResolution(uint256,bytes32,uint256,bytes)"](
+      market.connect(owner)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
         1n,
+        ethers.ZeroAddress,
         ethers.encodeBytes32String("winner"),
         77n,
         proof
@@ -386,8 +473,9 @@ describe("FhenixFairMarket Phase 1", function () {
     const { market, owner } = await loadFixture(createAuctionFixture);
 
     await expect(
-      market.connect(owner)["submitResolution(uint256,bytes32,uint256,bytes)"](
+      market.connect(owner)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
         1n,
+        ethers.ZeroAddress,
         ethers.encodeBytes32String("winner"),
         10n,
         "0x"
@@ -461,15 +549,20 @@ describe("FhenixFairMarket Phase 1", function () {
     const { adapter, mockCofhe } = await loadFixture(deployFixture);
 
     const ciphertext = await adapter.asEuint32(42);
+    const largeCiphertext = await adapter.asEuint96(ethers.parseEther("0.45"));
     const encryptedTrue = await adapter.asEbool(true);
     const encryptedFalse = await adapter.asEbool(false);
     const selectedCiphertext = await adapter.select(encryptedTrue, ciphertext, await adapter.asEuint32(7));
 
     expect(await adapter.lte(ciphertext, 100)).to.equal(true);
+    expect(await adapter.lte(largeCiphertext, ethers.parseEther("1"))).to.equal(true);
     expect(await adapter.gt(ciphertext, 40)).to.equal(true);
+    expect(await adapter.gt(largeCiphertext, ethers.parseEther("0.40"))).to.equal(true);
     expect(await adapter.verifyEncryptedBidCoverage(ciphertext, 42)).to.equal(true);
+    expect(await adapter.verifyEncryptedBidCoverage(largeCiphertext, ethers.parseEther("0.44"))).to.equal(false);
     expect(await adapter.verifyEncryptedBidCoverage(ciphertext, 41)).to.equal(false);
     expect(await adapter.ciphertextKind(ciphertext)).to.equal(1);
+    expect(await adapter.ciphertextKind(largeCiphertext)).to.equal(3);
     expect(await adapter.ciphertextKind(encryptedTrue)).to.equal(2);
     expect(await adapter.select(encryptedFalse, ciphertext, await adapter.asEuint32(7))).to.equal(
       await adapter.asEuint32(7)
@@ -489,6 +582,10 @@ describe("FhenixFairMarket Phase 1", function () {
     const explanation = await mockCofhe.explainCiphertext(ciphertext);
     expect(explanation[0]).to.equal(1n);
     expect(explanation[1]).to.equal(42n);
+
+    const largeExplanation = await mockCofhe.explainCiphertext(largeCiphertext);
+    expect(largeExplanation[0]).to.equal(3n);
+    expect(largeExplanation[1]).to.equal(ethers.parseEther("0.45"));
   });
 
   it("keeps ciphertext type tags explicit across the local adapter and mock path", async function () {

@@ -1,8 +1,10 @@
-import { AbiCoder, getBytes, type Signer } from "ethers";
+import { AbiCoder, ZeroHash, getBytes, type Signer } from "ethers";
 
 import { AuctionMonitor } from "../../../keeper/services/auctionMonitor";
 import { AvsSubmitter } from "../../../keeper/services/avsSubmitter";
 import { CofheDispatcher, type EncryptedBidRecord } from "../../../keeper/services/cofheDispatcher";
+
+const MAX_SHIELDED_ESCROW = (1n << 96n) - 1n;
 
 export async function collectEncryptedBids(
   market: {
@@ -32,19 +34,26 @@ export async function collectShieldedEncryptedBids(
     getShieldedEncryptedBid(auctionId: bigint, commitmentHash: string): Promise<string>;
   },
   vault: {
-    previewCommitment(commitmentHash: string): Promise<readonly [bigint, bigint, boolean, boolean]>;
+    commitmentState(commitmentHash: string): Promise<readonly [bigint, boolean, boolean]>;
   },
+  registry: {
+    identityForCommitment(auctionId: bigint, commitmentHash: string): Promise<string>;
+  } | undefined,
   auctionId: bigint
 ): Promise<EncryptedBidRecord[]> {
   const commitments = await market.getShieldedCommitments(auctionId);
   const bids: EncryptedBidRecord[] = [];
 
   for (const commitmentHash of commitments) {
-    const preview = await vault.previewCommitment(commitmentHash);
+    const [commitmentAuctionId, refundUnlocked, claimed] = await vault.commitmentState(commitmentHash);
+    if (commitmentAuctionId !== auctionId || refundUnlocked || claimed) {
+      continue;
+    }
+    const identityHash = registry ? await registry.identityForCommitment(auctionId, commitmentHash) : ZeroHash;
     bids.push({
-      bidder: commitmentHash,
+      bidder: identityHash === ZeroHash ? commitmentHash : identityHash,
       encryptedBid: await market.getShieldedEncryptedBid(auctionId, commitmentHash),
-      availableEscrow: BigInt(preview[1]),
+      availableEscrow: MAX_SHIELDED_ESCROW,
       isShielded: true
     });
   }
@@ -61,13 +70,16 @@ export async function collectAllEncryptedBids(
     getShieldedEncryptedBid(auctionId: bigint, commitmentHash: string): Promise<string>;
   },
   vault: {
-    previewCommitment(commitmentHash: string): Promise<readonly [bigint, bigint, boolean, boolean]>;
+    commitmentState(commitmentHash: string): Promise<readonly [bigint, boolean, boolean]>;
   },
+  registry: {
+    identityForCommitment(auctionId: bigint, commitmentHash: string): Promise<string>;
+  } | undefined,
   auctionId: bigint
 ): Promise<EncryptedBidRecord[]> {
   const [publicBids, shieldedBids] = await Promise.all([
     collectEncryptedBids(market, auctionId),
-    collectShieldedEncryptedBids(market, vault, auctionId)
+    collectShieldedEncryptedBids(market, vault, registry, auctionId)
   ]);
 
   return [...publicBids, ...shieldedBids];

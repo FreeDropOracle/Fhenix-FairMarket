@@ -1,0 +1,11 @@
+# Circom build outputs
+build/
+
+# Trusted setup files
+*.ptau
+*.zkey
+
+# Witness and proof outputs
+*.wtns
+proof.json
+public.json

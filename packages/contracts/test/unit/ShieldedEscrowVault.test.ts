@@ -5,6 +5,85 @@ import { ethers } from "hardhat";
 import { buildPhase3ResolutionProof, collectEncryptedBids } from "../helpers/phase3";
 import { createPhase2AuctionFixture } from "../helpers/fixtures";
 
+function buildShieldedNote(label: string) {
+  const identityHash = ethers.id(`${label}:identity`);
+  const secret = ethers.encodeBytes32String(`${label}-secret`.slice(0, 31));
+  const nullifier = ethers.encodeBytes32String(`${label}-nullifier`.slice(0, 31));
+  const commitment = ethers.solidityPackedKeccak256(["bytes32", "bytes32"], [secret, nullifier]);
+  const claimAuthority = ethers.Wallet.createRandom();
+
+  return {
+    identityHash,
+    secret,
+    nullifier,
+    commitment,
+    claimAuthority
+  };
+}
+
+async function signRefundClaim(
+  vaultAddress: string,
+  auctionId: bigint,
+  commitmentHash: string,
+  recipient: string,
+  deadline: bigint,
+  claimAuthority: ethers.Wallet
+) {
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "uint256", "address", "uint256", "bytes32", "address", "uint256"],
+      [ethers.id("FFM_SHIELDED_REFUND_CLAIM"), 31337n, vaultAddress, auctionId, commitmentHash, recipient, deadline]
+    )
+  );
+
+  return claimAuthority.signMessage(ethers.getBytes(digest));
+}
+
+async function signBidCoverage(
+  vaultAddress: string,
+  auctionId: bigint,
+  commitmentHash: string,
+  encryptedBid: string,
+  deadline: bigint,
+  claimAuthority: ethers.Wallet
+) {
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["bytes32", "uint256", "address", "uint256", "bytes32", "bytes32", "uint256"],
+      [
+        ethers.id("FFM_SHIELDED_BID_COVERAGE"),
+        31337n,
+        vaultAddress,
+        auctionId,
+        commitmentHash,
+        ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["bytes32"], [encryptedBid])),
+        deadline
+      ]
+    )
+  );
+
+  return claimAuthority.signMessage(ethers.getBytes(digest));
+}
+
+async function signVerifierCoverage(
+  verifierAddress: string,
+  vaultAddress: string,
+  auctionId: bigint,
+  commitmentHash: string,
+  encryptedBid: string,
+  deadline: bigint,
+  prover: ethers.Wallet
+) {
+  const digest = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ["address", "uint256", "address", "uint256", "bytes32", "bytes32", "uint256"],
+      [verifierAddress, 31337n, vaultAddress, auctionId, commitmentHash, encryptedBid, deadline]
+    )
+  );
+
+  return prover.signMessage(ethers.getBytes(digest));
+}
+
 describe("ShieldedEscrowVault Privacy Phase 1", function () {
   async function createShieldedFixture() {
     const context = await createPhase2AuctionFixture();
@@ -14,48 +93,58 @@ describe("ShieldedEscrowVault Privacy Phase 1", function () {
     const vault = await vaultFactory.deploy(owner.address);
     await vault.waitForDeployment();
 
+    const registryFactory = await ethers.getContractFactory("ShieldedIdentityRegistry");
+    const registry = await registryFactory.deploy(owner.address);
+    await registry.waitForDeployment();
+
     await vault.connect(owner).setMarket(await market.getAddress());
+    await vault.connect(owner).setPreviewReader(owner.address);
+    await registry.connect(owner).setMarket(await market.getAddress());
     await market.connect(owner).setShieldedEscrowVault(await vault.getAddress());
+    await market.connect(owner).setShieldedIdentityRegistry(await registry.getAddress());
 
     return {
       ...context,
-      vault
+      vault,
+      registry
     };
   }
 
   it("locks shielded escrow by commitment without creating a public bidder balance", async function () {
-    const { bidder, market, vault } = await loadFixture(createShieldedFixture);
+    const { bidder, market, registry, vault } = await loadFixture(createShieldedFixture);
+    const note = buildShieldedNote("lock-escrow-1");
 
-    const secret = ethers.encodeBytes32String("shielded-secret-1");
-    const nullifier = ethers.encodeBytes32String("shielded-nullifier-1");
-    const commitment = ethers.solidityPackedKeccak256(["bytes32", "bytes32"], [secret, nullifier]);
-
-    await expect(market.connect(bidder).lockShieldedEscrow(1n, commitment, { value: ethers.parseEther("2") }))
+    await expect(
+      market.connect(bidder).lockShieldedEscrow(1n, note.identityHash, note.commitment, note.claimAuthority.address, {
+        value: ethers.parseEther("2")
+      })
+    )
       .to.emit(market, "ShieldedEscrowLocked")
-      .withArgs(1n, commitment, ethers.parseEther("2"));
+      .withArgs(1n, note.commitment, ethers.parseEther("2"));
 
-    const preview = await vault.previewCommitment(commitment);
+    const preview = await vault.previewCommitment(note.commitment);
     expect(preview[0]).to.equal(1n);
     expect(preview[1]).to.equal(ethers.parseEther("2"));
     expect(preview[2]).to.equal(false);
     expect(preview[3]).to.equal(false);
 
     expect(await market.escrowBalances(1n, bidder.address)).to.equal(0n);
-    expect(await vault.totalEscrowForAuction(1n)).to.equal(ethers.parseEther("2"));
+    expect(await vault.hasEscrowForAuction(1n)).to.equal(true);
+    expect(await registry.commitmentForIdentity(1n, note.identityHash)).to.equal(note.commitment);
+    expect(await vault.claimAuthorityForCommitment(note.commitment)).to.equal(note.claimAuthority.address);
 
     const phase2Details = await market.getAuctionPhase2Details(1n);
-    expect(phase2Details[1]).to.equal(ethers.parseEther("2"));
+    expect(phase2Details[1]).to.equal(0n);
   });
 
   it("releases shielded principal plus slash compensation after seller cancellation", async function () {
     const { bidder, market, outsider, seller, settlementEngine, slashedPot, vault } = await loadFixture(createShieldedFixture);
-
-    const secret = ethers.encodeBytes32String("shielded-secret-2");
-    const nullifier = ethers.encodeBytes32String("shielded-nullifier-2");
-    const commitment = ethers.solidityPackedKeccak256(["bytes32", "bytes32"], [secret, nullifier]);
+    const note = buildShieldedNote("cancel-escrow-2");
     const shieldedAmount = ethers.parseEther("2");
 
-    await market.connect(bidder).lockShieldedEscrow(1n, commitment, { value: shieldedAmount });
+    await market
+      .connect(bidder)
+      .lockShieldedEscrow(1n, note.identityHash, note.commitment, note.claimAuthority.address, { value: shieldedAmount });
 
     const auction = await market.getAuction(1n);
     const details = await market.getAuctionPhase2Details(1n);
@@ -73,31 +162,37 @@ describe("ShieldedEscrowVault Privacy Phase 1", function () {
       .to.emit(market, "ShieldedRefundPathOpened")
       .withArgs(1n);
 
-    const preview = await vault.previewCommitment(commitment);
+    const preview = await vault.previewCommitment(note.commitment);
     expect(preview[2]).to.equal(true);
-    expect(await slashedPot.previewClaim(1n, shieldedAmount)).to.equal(expectedSlash);
 
-    await expect(() => vault.connect(outsider).claimRefund(secret, nullifier, bidder.address)).to.changeEtherBalances(
-      [vault, bidder, slashedPot],
-      [-shieldedAmount, shieldedAmount + expectedSlash, -expectedSlash]
+    const deadline = BigInt((await time.latest()) + 3600);
+    const refundSignature = await signRefundClaim(
+      await vault.getAddress(),
+      1n,
+      note.commitment,
+      bidder.address,
+      deadline,
+      note.claimAuthority
     );
 
-    await expect(vault.connect(outsider).claimRefund(secret, nullifier, bidder.address)).to.be.revertedWithCustomError(
-      vault,
-      "NullifierAlreadySpent"
-    );
+    await expect(() =>
+      vault.connect(outsider).claimRefundWithAuthorization(note.commitment, bidder.address, deadline, refundSignature)
+    ).to.changeEtherBalances([vault, bidder, slashedPot], [-(shieldedAmount + expectedSlash), shieldedAmount + expectedSlash, 0n]);
+
+    await expect(
+      vault.connect(outsider).claimRefundWithAuthorization(note.commitment, bidder.address, deadline, refundSignature)
+    ).to.be.revertedWithCustomError(vault, "CommitmentAlreadyClaimed");
   });
 
   it("opens the shielded refund path after a no-winner finalization and lets the seller reclaim the NFT", async function () {
     const { avs, avsOperatorOne, avsOperatorTwo, bidder, market, nft, outsider, owner, seller, vault } =
       await loadFixture(createShieldedFixture);
-
-    const secret = ethers.encodeBytes32String("shielded-secret-3");
-    const nullifier = ethers.encodeBytes32String("shielded-nullifier-3");
-    const commitment = ethers.solidityPackedKeccak256(["bytes32", "bytes32"], [secret, nullifier]);
+    const note = buildShieldedNote("no-winner-3");
     const shieldedAmount = ethers.parseEther("1");
 
-    await market.connect(bidder).lockShieldedEscrow(1n, commitment, { value: shieldedAmount });
+    await market
+      .connect(bidder)
+      .lockShieldedEscrow(1n, note.identityHash, note.commitment, note.claimAuthority.address, { value: shieldedAmount });
 
     await time.increase(24 * 60 * 60 + 1);
     await market.triggerFinalize(1n);
@@ -117,15 +212,189 @@ describe("ShieldedEscrowVault Privacy Phase 1", function () {
       .to.emit(market, "ShieldedRefundPathOpened")
       .withArgs(1n);
 
-    const preview = await vault.previewCommitment(commitment);
+    const preview = await vault.previewCommitment(note.commitment);
     expect(preview[2]).to.equal(true);
 
-    await expect(() => vault.connect(outsider).claimRefund(secret, nullifier, bidder.address)).to.changeEtherBalances(
+    const deadline = BigInt((await time.latest()) + 3600);
+    const refundSignature = await signRefundClaim(
+      await vault.getAddress(),
+      1n,
+      note.commitment,
+      bidder.address,
+      deadline,
+      note.claimAuthority
+    );
+
+    await expect(() =>
+      vault.connect(outsider).claimRefundWithAuthorization(note.commitment, bidder.address, deadline, refundSignature)
+    ).to.changeEtherBalances(
       [vault, bidder],
       [-shieldedAmount, shieldedAmount]
     );
 
     await market.connect(seller).claimAsset(1n);
     expect(await nft.ownerOf(1n)).to.equal(seller.address);
+  });
+
+  it("rejects expired or forged authorized refund claims", async function () {
+    const { bidder, market, seller, vault } = await loadFixture(createShieldedFixture);
+    const note = buildShieldedNote("auth-reject-4");
+    const shieldedAmount = ethers.parseEther("1");
+
+    await market
+      .connect(bidder)
+      .lockShieldedEscrow(1n, note.identityHash, note.commitment, note.claimAuthority.address, { value: shieldedAmount });
+
+    await market.connect(seller).cancelAuction(1n);
+
+    const expiredDeadline = BigInt(await time.latest());
+    const expiredSignature = await signRefundClaim(
+      await vault.getAddress(),
+      1n,
+      note.commitment,
+      bidder.address,
+      expiredDeadline,
+      note.claimAuthority
+    );
+
+    await time.increase(1);
+    await expect(
+      vault.connect(seller).claimRefundWithAuthorization(note.commitment, bidder.address, expiredDeadline, expiredSignature)
+    ).to.be.revertedWithCustomError(vault, "ClaimAuthorizationExpired");
+
+    const validDeadline = BigInt((await time.latest()) + 3600);
+    const forgedSignature = await signRefundClaim(
+      await vault.getAddress(),
+      1n,
+      note.commitment,
+      bidder.address,
+      validDeadline,
+      ethers.Wallet.createRandom()
+    );
+
+    await expect(
+      vault.connect(seller).claimRefundWithAuthorization(note.commitment, bidder.address, validDeadline, forgedSignature)
+    ).to.be.revertedWithCustomError(vault, "InvalidClaimAuthority");
+  });
+
+  it("keeps note metadata readable without exposing raw shielded amounts to unauthorized callers", async function () {
+    const { adapter, bidder, market, outsider, owner, vault } = await loadFixture(createShieldedFixture);
+    const note = buildShieldedNote("preview-gate-5");
+
+    await market
+      .connect(bidder)
+      .lockShieldedEscrow(1n, note.identityHash, note.commitment, note.claimAuthority.address, {
+        value: ethers.parseEther("1")
+      });
+
+    const metadata = await vault.commitmentState(note.commitment);
+    expect(metadata[0]).to.equal(1n);
+    expect(metadata[1]).to.equal(false);
+    expect(metadata[2]).to.equal(false);
+
+    await expect(vault.connect(outsider).previewCommitment(note.commitment)).to.be.revertedWithCustomError(
+      vault,
+      "NotPreviewReader"
+    );
+    await expect(
+      vault.connect(outsider).verifyPlaintextBidCoverage(note.commitment, ethers.parseEther("1"))
+    ).to.be.revertedWithCustomError(vault, "NotPreviewReader");
+
+    const preview = await vault.connect(owner).previewCommitment(note.commitment);
+    expect(preview[1]).to.equal(ethers.parseEther("1"));
+    expect(
+      await vault
+        .connect(owner)
+        .verifyEncryptedBidCoverage(note.commitment, await adapter.asEuint96(ethers.parseEther("0.75")), await adapter.getAddress())
+    ).to.equal(true);
+    expect(await vault.connect(owner).verifyPlaintextBidCoverage(note.commitment, ethers.parseEther("2"))).to.equal(false);
+  });
+
+  it("accepts proof-carried shielded bid coverage without revealing the note amount in the call", async function () {
+    const { adapter, bidder, market, outsider, vault } = await loadFixture(createShieldedFixture);
+    const note = buildShieldedNote("proof-carried-6");
+
+    await market
+      .connect(bidder)
+      .lockShieldedEscrow(1n, note.identityHash, note.commitment, note.claimAuthority.address, {
+        value: ethers.parseEther("1")
+      });
+
+    const encryptedBid = await adapter.asEuint96(ethers.parseEther("0.75"));
+    const deadline = BigInt((await time.latest()) + 3600);
+    const proof = await signBidCoverage(
+      await vault.getAddress(),
+      1n,
+      note.commitment,
+      encryptedBid,
+      deadline,
+      note.claimAuthority
+    );
+
+    await expect(vault.connect(outsider).verifyBidCoverageProof(note.commitment, encryptedBid, deadline, proof)).to.not.be
+      .reverted;
+    await expect(
+      vault.connect(outsider).verifyBidCoverageProof(
+        note.commitment,
+        encryptedBid,
+        deadline,
+        await signBidCoverage(
+          await vault.getAddress(),
+          1n,
+          note.commitment,
+          encryptedBid,
+          deadline,
+          ethers.Wallet.createRandom()
+        )
+      )
+    ).to.be.revertedWithCustomError(vault, "InvalidClaimAuthority");
+  });
+
+  it("can route shielded bid proofs through an external verifier boundary", async function () {
+    const { adapter, bidder, market, outsider, owner, vault } = await loadFixture(createShieldedFixture);
+    const note = buildShieldedNote("verifier-boundary-7");
+    const prover = ethers.Wallet.createRandom();
+
+    const verifierFactory = await ethers.getContractFactory("MockShieldedBidVerifier");
+    const verifier = await verifierFactory.deploy(owner.address, prover.address);
+    await verifier.waitForDeployment();
+    await vault.connect(owner).setShieldedBidVerifier(await verifier.getAddress());
+
+    await market
+      .connect(bidder)
+      .lockShieldedEscrow(1n, note.identityHash, note.commitment, note.claimAuthority.address, {
+        value: ethers.parseEther("1")
+      });
+
+    const encryptedBid = await adapter.asEuint96(ethers.parseEther("0.75"));
+    const deadline = BigInt((await time.latest()) + 3600);
+    const verifierProof = await signVerifierCoverage(
+      await verifier.getAddress(),
+      await vault.getAddress(),
+      1n,
+      note.commitment,
+      encryptedBid,
+      deadline,
+      prover
+    );
+
+    await expect(vault.connect(outsider).verifyBidCoverageProof(note.commitment, encryptedBid, deadline, verifierProof)).to
+      .not.be.reverted;
+    await expect(
+      vault.connect(outsider).verifyBidCoverageProof(
+        note.commitment,
+        encryptedBid,
+        deadline,
+        await signVerifierCoverage(
+          await verifier.getAddress(),
+          await vault.getAddress(),
+          1n,
+          note.commitment,
+          encryptedBid,
+          deadline,
+          ethers.Wallet.createRandom()
+        )
+      )
+    ).to.be.revertedWithCustomError(verifier, "InvalidProver");
   });
 });

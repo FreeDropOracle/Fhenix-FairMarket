@@ -36,6 +36,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                 href={route.href}
                 aria-current={pathname === route.href ? "page" : undefined}
                 data-active={pathname === route.href}
+                data-priority={route.priority}
               >
                 {route.label}
               </Link>

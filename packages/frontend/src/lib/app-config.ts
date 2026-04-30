@@ -49,11 +49,11 @@ export const appConfig = {
 } as const;
 
 export const appRoutes = [
-  { href: "/", label: "Overview" },
-  { href: "/marketplace", label: "Marketplace" },
-  { href: "/portfolio", label: "Portfolio" },
-  { href: "/governance", label: "Governance" },
-  { href: "/about", label: "About" }
+  { href: "/", label: "Overview", priority: "primary" },
+  { href: "/marketplace", label: "Marketplace", priority: "primary" },
+  { href: "/portfolio", label: "Portfolio", priority: "primary" },
+  { href: "/governance", label: "Governance", priority: "secondary" },
+  { href: "/about", label: "About", priority: "secondary" }
 ] as const;
 
 export function formatAddress(value: string | null | undefined) {

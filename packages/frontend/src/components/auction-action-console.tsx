@@ -468,7 +468,7 @@ export function AuctionActionConsole({
         : "Seal bid";
 
   return (
-    <section className="action-console">
+    <section className="action-console" id="auction-actions">
       <div className="section-header">
         <div>
           <p className="eyebrow">Actions</p>

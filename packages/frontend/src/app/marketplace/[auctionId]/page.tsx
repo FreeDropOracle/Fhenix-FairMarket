@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { CSSProperties } from "react";
 
 import { AuctionActionConsole } from "@/components/auction-action-console";
 import { AuctionSettlementControls } from "@/components/auction-settlement-controls";
@@ -28,22 +27,34 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
     notFound();
   }
 
+  const closeWindowReached = auction.state === "active" && auction.timeLabel === "Closed";
+  const primaryAction = auction.onChain
+    ? closeWindowReached
+      ? { href: "#settlement-controls", label: "Open settlement" }
+      : auction.state === "finalized"
+        ? { href: "#settlement-controls", label: "Open claim route" }
+        : auction.state === "cancelled"
+          ? { href: "#seller-controls", label: "Open seller route" }
+          : auction.state === "resolving"
+            ? { href: "#settlement-controls", label: "Review settlement" }
+            : { href: "#auction-actions", label: "Place private bid" }
+    : { href: "#auction-actions", label: "Review actions" };
+
   return (
     <main className="page-grid detail-shell">
       <section className="detail-hero">
         <div className="detail-hero__visual">
-          <div
-            className="detail-orb"
-            style={
-              {
-                "--auction-halo": auction.visual.halo,
-                "--auction-beam": auction.visual.beam,
-                "--auction-mist": auction.visual.mist
-              } as CSSProperties
-            }
-          >
-            <span className="detail-orb__lot">{auction.lotLabel}</span>
-            <strong className="detail-orb__state">{auction.timeLabel}</strong>
+          <div className="detail-hero__art">
+            <img
+              className="detail-hero__image"
+              src={auction.artwork.src}
+              alt={auction.artwork.alt}
+              loading="lazy"
+            />
+            <div className="detail-hero__art-head">
+              <span className="detail-hero__lot">{auction.lotLabel}</span>
+              <strong className="detail-hero__timechip">{auction.timeLabel}</strong>
+            </div>
           </div>
         </div>
 
@@ -54,21 +65,35 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
           </div>
           <h1 className="detail-title detail-hero__title">{auction.title}</h1>
           <p className="detail-copy">{auction.synopsis}</p>
+          <div className="detail-hero__summary">
+            <article className="detail-hero__summary-card">
+              <span>Window</span>
+              <strong>{auction.timeLabel}</strong>
+            </article>
+            <article className="detail-hero__summary-card">
+              <span>Opening</span>
+              <strong>{auction.openingBidLabel}</strong>
+            </article>
+            <article className="detail-hero__summary-card">
+              <span>Privacy</span>
+              <strong>{auction.confidentialityLabel}</strong>
+            </article>
+          </div>
           <p className="detail-callout">{auction.settlementNote}</p>
           <div className="hero-actions">
+            <Link className="primary-action" href={primaryAction.href}>
+              {primaryAction.label}
+            </Link>
             {auction.onChain ? (
               <>
                 <Link className="secondary-action" href="#settlement-controls">
-                  Settlement controls
+                  Settlement
                 </Link>
                 <Link className="secondary-action" href="#seller-controls">
-                  Seller controls
+                  Seller path
                 </Link>
               </>
             ) : null}
-            <Link className="primary-action" href="/marketplace/create">
-              Create adjacent lot
-            </Link>
             <Link className="secondary-action" href="/marketplace">
               Return to desk
             </Link>
@@ -156,7 +181,7 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
 
       <section className="detail-grid">
         <article className="detail-card">
-          <p className="eyebrow">Immediate actions</p>
+          <p className="eyebrow">What happens next</p>
           <ul className="signal-list">
             {auction.nextActions.map((action) => (
               <li key={action}>{action}</li>
@@ -165,7 +190,7 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
         </article>
 
         <article className="detail-card">
-          <p className="eyebrow">Auction notes</p>
+          <p className="eyebrow">Technical notes</p>
           <ul className="signal-list">
             {auction.protocolSignals.map((signal) => (
               <li key={signal}>{signal}</li>

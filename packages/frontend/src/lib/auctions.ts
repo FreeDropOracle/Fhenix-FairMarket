@@ -25,6 +25,10 @@ export type AuctionRecord = {
     beam: string;
     mist: string;
   };
+  artwork: {
+    src: string;
+    alt: string;
+  };
   metrics: Array<{
     label: string;
     value: string;
@@ -76,6 +80,20 @@ export const auctionSortOptions: Array<{
   { value: "newest", label: "Newest lots" }
 ];
 
+const placeholderArtwork = [
+  "/auction-art/lot-aether-001.svg",
+  "/auction-art/lot-aether-002.svg",
+  "/auction-art/lot-aether-003.svg",
+  "/auction-art/lot-aether-004.svg"
+] as const;
+
+export function getAuctionArtwork(index: number, title: string) {
+  return {
+    src: placeholderArtwork[index % placeholderArtwork.length],
+    alt: `${title} NFT artwork preview`
+  };
+}
+
 const auctionSeed: AuctionRecord[] = [
   {
     id: "aurora-vault-091",
@@ -99,6 +117,7 @@ const auctionSeed: AuctionRecord[] = [
       beam: "rgba(84, 150, 255, 0.92)",
       mist: "rgba(193, 142, 255, 0.14)"
     },
+    artwork: getAuctionArtwork(0, "Aurora Vault"),
     metrics: [
       { label: "Bid slots", value: "18 lanes" },
       { label: "Participants", value: "07 active" },
@@ -141,6 +160,7 @@ const auctionSeed: AuctionRecord[] = [
       beam: "rgba(153, 111, 255, 0.84)",
       mist: "rgba(91, 190, 255, 0.12)"
     },
+    artwork: getAuctionArtwork(1, "Helios Index"),
     metrics: [
       { label: "Bid slots", value: "12 lanes" },
       { label: "Participants", value: "05 active" },
@@ -183,6 +203,7 @@ const auctionSeed: AuctionRecord[] = [
       beam: "rgba(121, 178, 255, 0.9)",
       mist: "rgba(101, 255, 207, 0.1)"
     },
+    artwork: getAuctionArtwork(2, "Zero-Knowledge Bloom"),
     metrics: [
       { label: "Bid lanes", value: "09 sealed" },
       { label: "Settlement stage", value: "Verification in progress" },
@@ -225,6 +246,7 @@ const auctionSeed: AuctionRecord[] = [
       beam: "rgba(171, 108, 255, 0.9)",
       mist: "rgba(255, 208, 116, 0.12)"
     },
+    artwork: getAuctionArtwork(3, "Midnight Calculus"),
     metrics: [
       { label: "Winning lane", value: "4.68 ETH" },
       { label: "Claims", value: "Open" },
@@ -267,6 +289,7 @@ const auctionSeed: AuctionRecord[] = [
       beam: "rgba(139, 110, 255, 0.82)",
       mist: "rgba(255, 126, 154, 0.12)"
     },
+    artwork: getAuctionArtwork(4, "Parallax Axiom"),
     metrics: [
       { label: "Refund lane", value: "Live" },
       { label: "Seller slash", value: "Triggered" },
@@ -309,6 +332,7 @@ const auctionSeed: AuctionRecord[] = [
       beam: "rgba(93, 194, 255, 0.86)",
       mist: "rgba(153, 118, 255, 0.12)"
     },
+    artwork: getAuctionArtwork(5, "Sable Atlas"),
     metrics: [
       { label: "Bid lanes", value: "23 lanes" },
       { label: "Participants", value: "11 active" },
@@ -437,6 +461,7 @@ export type UserOperationRecord = {
   participations: AuctionRecord[];
   claims: Array<{
     id: string;
+    auctionId: string;
     title: string;
     category: "refund" | "seller" | "asset" | "keeper";
     amountLabel: string;
@@ -476,6 +501,7 @@ export function getUserOperations(): UserOperationRecord {
     claims: [
       {
         id: "claim-seller-midnight",
+        auctionId: "midnight-calculus-313",
         title: "Seller proceeds / Midnight Calculus",
         category: "seller",
         amountLabel: "4.68 ETH",
@@ -485,6 +511,7 @@ export function getUserOperations(): UserOperationRecord {
       },
       {
         id: "claim-asset-midnight",
+        auctionId: "midnight-calculus-313",
         title: "Winning asset / Midnight Calculus",
         category: "asset",
         amountLabel: "1 NFT",
@@ -494,15 +521,17 @@ export function getUserOperations(): UserOperationRecord {
       },
       {
         id: "claim-refund-parallax",
+        auctionId: "parallax-axiom-402",
         title: "Refund / Parallax Axiom",
         category: "refund",
         amountLabel: "1.40 ETH",
         note: "Fallback void completed. Refund route is unlocked.",
         tone: "warning",
-        actionLabel: "Claim refund"
+        actionLabel: "Review refund path"
       },
       {
         id: "claim-keeper-bloom",
+        auctionId: "zero-knowledge-bloom-208",
         title: "Keeper reward / Zero-Knowledge Bloom",
         category: "keeper",
         amountLabel: "0.06 ETH",

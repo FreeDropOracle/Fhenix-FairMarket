@@ -4,7 +4,7 @@ import Link from "next/link";
 import { parseEther } from "ethers";
 import { useMemo, useState } from "react";
 
-import { StatusPill } from "@/components/status-pill";
+import { StatusPill, type StatusPillTone } from "@/components/status-pill";
 import { useWallet } from "@/components/wallet-provider";
 import { appConfig, formatAddress, isAddressLike } from "@/lib/app-config";
 import { createAuctionWithWallet, type CreateAuctionResult } from "@/lib/create-auction";
@@ -24,16 +24,54 @@ type CreateAuctionFormState = {
   tokenId: string;
 };
 
+type CreateStep = "asset" | "duration" | "deposit" | "review";
+
 const DAYS_PER_MONTH = 30;
 const MIN_AUCTION_DURATION_SECONDS = 60;
 const MAX_AUCTION_DURATION_SECONDS = 90 * 24 * 60 * 60;
 
+const createSteps: Array<{
+  id: CreateStep;
+  label: string;
+  short: string;
+  title: string;
+  copy: string;
+}> = [
+  {
+    id: "asset",
+    label: "Asset",
+    short: "Which NFT are you listing?",
+    title: "Define the NFT that will enter market custody.",
+    copy: "Start with the contract, token ID, and auction format. This step makes the listing concrete before any funds move."
+  },
+  {
+    id: "duration",
+    label: "Duration",
+    short: "How long should bidding stay open?",
+    title: "Choose an auction window that stays within protocol bounds.",
+    copy: "The contract accepts anything from 1 minute to 3 months, so this screen keeps the duration readable before you continue."
+  },
+  {
+    id: "deposit",
+    label: "Deposit",
+    short: "How much seller coverage will you post?",
+    title: "Set the seller deposit that travels with creation.",
+    copy: "The deposit is sent in the same transaction as auction creation and becomes part of the seller-side guarantee."
+  },
+  {
+    id: "review",
+    label: "Review",
+    short: "Confirm the listing before it goes on chain.",
+    title: "Review the auction request before submitting it to Sepolia.",
+    copy: "This final step summarizes the NFT, duration, and deposit so the wallet prompt never feels abrupt."
+  }
+];
+
 const checklist = [
-  "The NFT must already be inside the seller wallet.",
-  "Approval is requested automatically if the market is not approved yet.",
-  "You can compose the auction window from 1 minute up to 3 months.",
-  "The seller deposit is sent with the same transaction that creates the auction.",
-  "After confirmation, the NFT moves into market custody until the auction ends."
+  "The NFT stays in the seller wallet until the final create transaction succeeds.",
+  "Approval is requested automatically only if the market is not already approved.",
+  "The auction window is constrained on chain to 1 minute through 3 months.",
+  "Seller deposit and auction creation settle together in one transaction."
 ] as const;
 
 function getPrimaryActionLabel(
@@ -117,6 +155,27 @@ function getDurationError(totalSeconds: number) {
   return null;
 }
 
+function getWalletStatus(wallet: ReturnType<typeof useWallet>, marketReady: boolean) {
+  if (!marketReady) {
+    return { label: "Blocked", tone: "danger" as StatusPillTone };
+  }
+  if (!wallet.hasProvider) {
+    return { label: "Wallet needed", tone: "danger" as StatusPillTone };
+  }
+  if (!wallet.isConnected) {
+    return { label: "Connect first", tone: "warning" as StatusPillTone };
+  }
+  if (!wallet.isSupportedNetwork) {
+    return { label: "Wrong network", tone: "warning" as StatusPillTone };
+  }
+
+  return { label: "Ready", tone: "success" as StatusPillTone };
+}
+
+function getFormatLabel(format: CreateAuctionFormState["format"]) {
+  return format === "vickrey" ? "Vickrey sealed bid" : "Confidential auction";
+}
+
 export function CreateAuctionForm() {
   const wallet = useWallet();
   const [form, setForm] = useState<CreateAuctionFormState>({
@@ -131,8 +190,9 @@ export function CreateAuctionForm() {
     sellerDeposit: "1.00",
     tokenId: ""
   });
+  const [step, setStep] = useState<CreateStep>("asset");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [progressMessage, setProgressMessage] = useState("Fill the on-chain fields, then confirm the transaction in your wallet.");
+  const [progressMessage, setProgressMessage] = useState("Review each step, then confirm the final transaction in your wallet.");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [result, setResult] = useState<CreateAuctionResult | null>(null);
 
@@ -142,9 +202,21 @@ export function CreateAuctionForm() {
   const durationError = getDurationError(durationSeconds);
   const durationSummary =
     durationSeconds >= MIN_AUCTION_DURATION_SECONDS ? formatDurationLabel(durationSeconds) : "Choose your duration";
+  const activeStepIndex = createSteps.findIndex((entry) => entry.id === step);
+  const activeStep = createSteps[activeStepIndex];
+  const walletStatus = getWalletStatus(wallet, marketReady);
+  const reviewRows = [
+    { label: "NFT contract", value: form.nftContract || "Waiting for contract address" },
+    { label: "Token ID", value: form.tokenId || "Waiting for token ID" },
+    { label: "Format", value: getFormatLabel(form.format) },
+    { label: "Duration", value: durationSummary },
+    { label: "Seller deposit", value: form.sellerDeposit ? `${form.sellerDeposit} ETH` : "Waiting for deposit" }
+  ] as const;
 
   const handleChange = <K extends keyof CreateAuctionFormState>(field: K, value: CreateAuctionFormState[K]) => {
     setForm((current) => ({ ...current, [field]: value }));
+    setErrorMessage(null);
+    setResult(null);
   };
 
   const handleDurationChange = (field: keyof DurationComposerState, value: string) => {
@@ -155,6 +227,8 @@ export function CreateAuctionForm() {
         [field]: sanitizeWholeNumberInput(value)
       }
     }));
+    setErrorMessage(null);
+    setResult(null);
   };
 
   const handleWalletSetup = async () => {
@@ -174,6 +248,64 @@ export function CreateAuctionForm() {
     }
 
     return true;
+  };
+
+  const validateCurrentStep = () => {
+    if (step === "asset") {
+      if (!isAddressLike(form.nftContract)) {
+        setErrorMessage("Enter a valid NFT contract address before continuing.");
+        return false;
+      }
+
+      try {
+        BigInt(form.tokenId);
+      } catch {
+        setErrorMessage("Token ID must be a whole number before continuing.");
+        return false;
+      }
+    }
+
+    if (step === "duration" && durationError) {
+      setErrorMessage(durationError);
+      return false;
+    }
+
+    if (step === "deposit") {
+      try {
+        const sellerDepositWei = parseEther(form.sellerDeposit);
+        if (sellerDepositWei <= 0n) {
+          setErrorMessage("Seller deposit must be greater than zero.");
+          return false;
+        }
+      } catch {
+        setErrorMessage("Seller deposit must be a valid ETH amount.");
+        return false;
+      }
+    }
+
+    setErrorMessage(null);
+    return true;
+  };
+
+  const handleAdvance = () => {
+    if (!validateCurrentStep()) {
+      return;
+    }
+
+    const nextStep = createSteps[activeStepIndex + 1];
+    if (nextStep) {
+      setStep(nextStep.id);
+      setProgressMessage(`Step ${activeStepIndex + 2} is ready. ${nextStep.short}`);
+    }
+  };
+
+  const handleBack = () => {
+    const previousStep = createSteps[activeStepIndex - 1];
+    if (previousStep) {
+      setErrorMessage(null);
+      setStep(previousStep.id);
+      setProgressMessage(`Back to ${previousStep.label.toLowerCase()}.`);
+    }
   };
 
   const handleSubmit = async () => {
@@ -238,10 +370,10 @@ export function CreateAuctionForm() {
         isVickrey: form.format === "vickrey",
         marketAddress: appConfig.contracts.marketProxyAddress,
         nftContract: form.nftContract,
+        onProgress: setProgressMessage,
         provider: window.ethereum,
         sellerDepositWei,
-        tokenId,
-        onProgress: setProgressMessage
+        tokenId
       });
 
       setResult(submission);
@@ -259,45 +391,70 @@ export function CreateAuctionForm() {
   };
 
   return (
-    <section className="create-grid">
-      <article className="detail-card create-form-card">
-        <p className="eyebrow">On-chain inputs</p>
-        <div className="field-grid">
-          <label className="field-block field-block--full">
-            <span className="field-label">NFT contract</span>
-            <input
-              className="field-input"
-              inputMode="text"
-              onChange={(event) => handleChange("nftContract", event.target.value)}
-              placeholder="0x..."
-              value={form.nftContract}
-            />
-          </label>
+    <section className="create-grid create-wizard">
+      <article className="detail-card create-form-card create-form-card--wizard">
+        <div className="create-stepper" aria-label="Auction creation steps">
+          {createSteps.map((entry, index) => {
+            const isActive = entry.id === step;
+            const isComplete = index < activeStepIndex;
 
-          <label className="field-block">
-            <span className="field-label">Token ID</span>
-            <input
-              className="field-input"
-              inputMode="numeric"
-              onChange={(event) => handleChange("tokenId", event.target.value)}
-              placeholder="91"
-              value={form.tokenId}
-            />
-          </label>
+            return (
+              <div key={entry.id} className="create-step" data-active={isActive} data-complete={isComplete}>
+                <span className="create-step__index">{index + 1}</span>
+                <div className="create-step__copy">
+                  <strong>{entry.label}</strong>
+                </div>
+              </div>
+            );
+          })}
+        </div>
 
-          <label className="field-block">
-            <span className="field-label">Seller deposit (ETH)</span>
-            <input
-              className="field-input"
-              inputMode="decimal"
-              onChange={(event) => handleChange("sellerDeposit", event.target.value)}
-              placeholder="1.00"
-              value={form.sellerDeposit}
-            />
-          </label>
+        <div className="create-form-stage">
+          <p className="eyebrow">Step {activeStepIndex + 1}</p>
+          <h2 className="detail-title portfolio-section-card__title">{activeStep.title}</h2>
+          <p className="detail-card__copy">{activeStep.copy}</p>
+        </div>
 
-          <div className="field-block field-block--full">
-            <span className="field-label">Auction duration</span>
+        {step === "asset" ? (
+          <div className="field-grid">
+            <label className="field-block field-block--full">
+              <span className="field-label">NFT contract</span>
+              <input
+                className="field-input"
+                inputMode="text"
+                onChange={(event) => handleChange("nftContract", event.target.value)}
+                placeholder="0x..."
+                value={form.nftContract}
+              />
+            </label>
+
+            <label className="field-block">
+              <span className="field-label">Token ID</span>
+              <input
+                className="field-input"
+                inputMode="numeric"
+                onChange={(event) => handleChange("tokenId", event.target.value)}
+                placeholder="91"
+                value={form.tokenId}
+              />
+            </label>
+
+            <label className="field-block">
+              <span className="field-label">Auction format</span>
+              <select
+                className="field-input"
+                onChange={(event) => handleChange("format", event.target.value as CreateAuctionFormState["format"])}
+                value={form.format}
+              >
+                <option value="vickrey">Vickrey sealed bid</option>
+                <option value="standard">Confidential auction</option>
+              </select>
+            </label>
+          </div>
+        ) : null}
+
+        {step === "duration" ? (
+          <div className="create-stage-stack">
             <div className="duration-grid">
               <label className="field-block">
                 <span className="field-label">Months</span>
@@ -351,71 +508,80 @@ export function CreateAuctionForm() {
             <div className="duration-summary" data-invalid={Boolean(durationError)}>
               <span className="duration-summary__eyebrow">Duration summary</span>
               <strong>{durationSummary}</strong>
-              <p>
-                Min 1 minute. Max 3 months. One month is treated as {DAYS_PER_MONTH} days on chain.
-              </p>
+              <p>Min 1 minute. Max 3 months. One month is treated as {DAYS_PER_MONTH} days on chain.</p>
             </div>
           </div>
+        ) : null}
 
-          <label className="field-block">
-            <span className="field-label">Auction format</span>
-            <select
-              className="field-input"
-              onChange={(event) => handleChange("format", event.target.value as CreateAuctionFormState["format"])}
-              value={form.format}
+        {step === "deposit" ? (
+          <div className="create-stage-stack">
+            <label className="field-block">
+              <span className="field-label">Seller deposit (ETH)</span>
+              <input
+                className="field-input"
+                inputMode="decimal"
+                onChange={(event) => handleChange("sellerDeposit", event.target.value)}
+                placeholder="1.00"
+                value={form.sellerDeposit}
+              />
+            </label>
+
+            <div className="duration-summary">
+              <span className="duration-summary__eyebrow">Why this exists</span>
+              <strong>{form.sellerDeposit ? `${form.sellerDeposit} ETH` : "Waiting for deposit"}</strong>
+              <p>The seller deposit is sent with the same transaction that creates the auction and backs the sell-side path.</p>
+            </div>
+          </div>
+        ) : null}
+
+        {step === "review" ? (
+          <div className="create-review-grid">
+            {reviewRows.map((row) => (
+              <div key={row.label} className="create-review-card">
+                <span>{row.label}</span>
+                <strong>{row.value}</strong>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {errorMessage ? (
+          <p aria-live="polite" className="action-console__notice" role="status">
+            {errorMessage}
+          </p>
+        ) : null}
+
+        <div className="hero-actions create-wizard__actions">
+          {activeStepIndex > 0 ? (
+            <button className="secondary-action" disabled={isSubmitting} onClick={handleBack} type="button">
+              Back
+            </button>
+          ) : null}
+
+          {step === "review" ? (
+            <button
+              className="primary-action create-launch-button"
+              disabled={isSubmitting || !marketReady}
+              onClick={handleSubmit}
+              type="button"
             >
-              <option value="vickrey">Vickrey sealed bid</option>
-              <option value="standard">Standard confidential auction</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="hero-actions">
-          <button
-            className="primary-action create-launch-button"
-            disabled={isSubmitting || !marketReady}
-            onClick={handleSubmit}
-            type="button"
-          >
-            {actionLabel}
-          </button>
-          <Link className="secondary-action" href="/marketplace">
-            Back to marketplace
-          </Link>
+              {actionLabel}
+            </button>
+          ) : (
+            <button className="primary-action create-launch-button" disabled={isSubmitting} onClick={handleAdvance} type="button">
+              Next: {createSteps[activeStepIndex + 1]?.label}
+            </button>
+          )}
         </div>
       </article>
 
-      <article className="detail-card create-summary-card">
+      <article className="detail-card create-summary-card create-summary-card--wizard">
         <div className="section-header">
           <div>
-            <p className="eyebrow">Submission status</p>
-            <h2 className="detail-title portfolio-section-card__title">What happens when you submit</h2>
+            <p className="eyebrow">Review rail</p>
+            <h2 className="detail-title portfolio-section-card__title">A quiet summary before the wallet prompt.</h2>
           </div>
-          <StatusPill
-            label={
-              isSubmitting
-                ? "Working"
-                : !wallet.hasProvider
-                  ? "Wallet needed"
-                  : !wallet.isConnected
-                    ? "Connect first"
-                    : !wallet.isSupportedNetwork
-                      ? "Wrong network"
-                      : marketReady
-                        ? "Ready"
-                        : "Blocked"
-            }
-            tone={
-              isSubmitting
-                ? "warning"
-                : !wallet.hasProvider || !marketReady
-                  ? "danger"
-                  : !wallet.isConnected || !wallet.isSupportedNetwork
-                    ? "warning"
-                    : "success"
-            }
-            pulse={isSubmitting}
-          />
+          <StatusPill label={isSubmitting ? "Working" : walletStatus.label} tone={isSubmitting ? "warning" : walletStatus.tone} pulse={isSubmitting} />
         </div>
 
         <div className="detail-stack">
@@ -428,17 +594,20 @@ export function CreateAuctionForm() {
           </div>
         </div>
 
+        <div className="create-review-grid create-review-grid--summary">
+          {reviewRows.map((row) => (
+            <div key={row.label} className="create-review-card">
+              <span>{row.label}</span>
+              <strong>{row.value}</strong>
+            </div>
+          ))}
+        </div>
+
         <ul className="signal-list">
           {checklist.map((item) => (
             <li key={item}>{item}</li>
           ))}
         </ul>
-
-        {errorMessage ? (
-          <p aria-live="polite" className="action-console__notice" role="status">
-            {errorMessage}
-          </p>
-        ) : null}
 
         {result ? (
           <div aria-live="polite" className="action-console__receipt" role="status">
@@ -456,10 +625,21 @@ export function CreateAuctionForm() {
               <a className="secondary-action" href={result.txUrl} rel="noreferrer" target="_blank">
                 Open on Etherscan
               </a>
-              {result.approvalTxHash ? <span className="create-feedback__meta">NFT approval was completed automatically first.</span> : null}
+              {result.approvalTxHash ? (
+                <span className="create-feedback__meta">NFT approval was completed automatically first.</span>
+              ) : null}
             </div>
           </div>
-        ) : null}
+        ) : (
+          <div className="create-support-links">
+            <Link className="secondary-action" href="/portfolio">
+              Open portfolio
+            </Link>
+            <Link className="secondary-action" href="/marketplace">
+              Browse marketplace
+            </Link>
+          </div>
+        )}
       </article>
     </section>
   );

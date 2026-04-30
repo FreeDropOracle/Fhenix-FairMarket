@@ -1,9 +1,10 @@
 import "server-only";
 
+import { cache } from "react";
 import { Contract, JsonRpcProvider, formatEther } from "ethers";
 
 import { appConfig, formatAddress, isAddressLike } from "@/lib/app-config";
-import { getAuctionById as getSeedAuctionById, type AuctionRecord, type AuctionState } from "@/lib/auctions";
+import { getAuctionArtwork, getAuctionById as getSeedAuctionById, type AuctionRecord, type AuctionState } from "@/lib/auctions";
 
 const marketAbi = [
   "function auctionCounter() view returns (uint256)",
@@ -13,9 +14,12 @@ const marketAbi = [
   "function previewSellerPayout(uint256 auctionId) view returns (uint256)"
 ] as const;
 
-const erc721MetadataAbi = ["function name() view returns (string)"] as const;
+const erc721MetadataAbi = ["function name() view returns (string)", "function tokenURI(uint256 tokenId) view returns (string)"] as const;
 const liveAuctionWindow = 24;
 const rpcTimeoutMs = 4_000;
+const alchemyApiKey = process.env.ALCHEMY_API_KEY?.trim() ?? "";
+const artworkCache = new Map<string, AuctionRecord["artwork"] | null>();
+const shouldLogArtworkDiagnostics = process.env.DEBUG_NFT_ARTWORK === "true";
 const liveAuctionVisuals = [
   {
     beam: "rgba(84, 150, 255, 0.92)",
@@ -89,6 +93,378 @@ function getMarketContract() {
   return cachedMarketContract;
 }
 
+function logArtworkDiagnostic(
+  event: string,
+  details: {
+    nftContract: string;
+    tokenId: string;
+    title: string;
+    reason?: string;
+    source?: string;
+  }
+) {
+  if (!shouldLogArtworkDiagnostics) {
+    return;
+  }
+
+  console.info("[nft-artwork]", event, details);
+}
+
+function normalizeNftImageUrl(candidate: unknown) {
+  if (typeof candidate !== "string") {
+    return null;
+  }
+
+  const value = candidate.trim();
+  if (value.length === 0 || value.startsWith("data:")) {
+    return null;
+  }
+
+  if (value.startsWith("ipfs://")) {
+    const path = value.replace(/^ipfs:\/\//, "").replace(/^ipfs\//, "");
+    return `https://ipfs.io/ipfs/${path}`;
+  }
+
+  if (value.startsWith("ar://")) {
+    return `https://arweave.net/${value.replace(/^ar:\/\//, "")}`;
+  }
+
+  if (value.startsWith("//")) {
+    return `https:${value}`;
+  }
+
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return value;
+  }
+
+  return null;
+}
+
+function normalizeInlineArtwork(candidate: unknown) {
+  if (typeof candidate !== "string") {
+    return null;
+  }
+
+  const value = candidate.trim();
+  if (value.length === 0) {
+    return null;
+  }
+
+  if (value.startsWith("data:image/")) {
+    return value;
+  }
+
+  if (value.startsWith("<svg")) {
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(value)}`;
+  }
+
+  return null;
+}
+
+function normalizeArtworkSource(candidate: unknown) {
+  return normalizeNftImageUrl(candidate) ?? normalizeInlineArtwork(candidate);
+}
+
+function normalizeMetadataUrl(candidate: unknown) {
+  if (typeof candidate !== "string") {
+    return null;
+  }
+
+  const value = candidate.trim();
+  if (value.length === 0) {
+    return null;
+  }
+
+  if (value.startsWith("data:application/json")) {
+    return value;
+  }
+
+  return normalizeNftImageUrl(value);
+}
+
+function decodeJsonDataUri(uri: string) {
+  const [, payload = ""] = uri.split(",", 2);
+  if (!payload) {
+    return null;
+  }
+
+  try {
+    const json =
+      uri.includes(";base64,")
+        ? Buffer.from(payload, "base64").toString("utf8")
+        : decodeURIComponent(payload);
+    return JSON.parse(json) as Record<string, any>;
+  } catch {
+    return null;
+  }
+}
+
+function resolveArtworkFromArray(candidate: unknown): string | null {
+  if (!Array.isArray(candidate)) {
+    return null;
+  }
+
+  for (const item of candidate) {
+    const resolved =
+      normalizeArtworkSource(item) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.gateway) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.raw) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.uri) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.url) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.href) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.src) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.image) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.image_url) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.thumbnail) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.thumbnailUrl) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.cachedUrl) ??
+      normalizeArtworkSource((item as Record<string, unknown> | null)?.originalUrl);
+
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return null;
+}
+
+function resolveImageFromMetadataPayload(payload: Record<string, any>) {
+  return (
+    normalizeArtworkSource(payload.image) ??
+    normalizeArtworkSource(payload.image_url) ??
+    normalizeArtworkSource(payload.imageUrl) ??
+    normalizeArtworkSource(payload.image_data) ??
+    normalizeArtworkSource(payload.imageData) ??
+    normalizeArtworkSource(payload.image_data_url) ??
+    normalizeArtworkSource(payload.thumbnail) ??
+    normalizeArtworkSource(payload.thumbnail_url) ??
+    normalizeArtworkSource(payload.thumbnailUrl) ??
+    normalizeArtworkSource(payload.cover_image) ??
+    normalizeArtworkSource(payload.coverImage) ??
+    normalizeArtworkSource(payload.content?.image) ??
+    normalizeArtworkSource(payload.content?.image_url) ??
+    normalizeArtworkSource(payload.content?.svg) ??
+    normalizeArtworkSource(payload.properties?.image) ??
+    normalizeArtworkSource(payload.properties?.image?.url) ??
+    normalizeArtworkSource(payload.properties?.image?.uri) ??
+    normalizeArtworkSource(payload.properties?.image?.href) ??
+    normalizeArtworkSource(payload.properties?.image?.src) ??
+    normalizeArtworkSource(payload.collection?.image) ??
+    normalizeArtworkSource(payload.metadata?.image) ??
+    normalizeArtworkSource(payload.metadata?.image_url) ??
+    resolveArtworkFromArray(payload.properties?.files) ??
+    resolveArtworkFromArray(payload.files) ??
+    resolveArtworkFromArray(payload.content?.files) ??
+    resolveArtworkFromArray(payload.assets) ??
+    resolveArtworkFromArray(payload.media) ??
+    resolveArtworkFromArray(payload.properties?.media) ??
+    normalizeArtworkSource(payload.animation_url) ??
+    normalizeArtworkSource(payload.animationUrl)
+  );
+}
+
+async function fetchMetadataPayload(metadataUrl: string) {
+  if (metadataUrl.startsWith("data:application/json")) {
+    return decodeJsonDataUri(metadataUrl);
+  }
+
+  const response = await fetch(metadataUrl, {
+    headers: { accept: "application/json" },
+    next: { revalidate: 900 },
+    signal: AbortSignal.timeout(rpcTimeoutMs)
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  return (await response.json()) as Record<string, any>;
+}
+
+async function fetchTokenUriArtwork(
+  nftContract: string,
+  tokenId: bigint,
+  title: string,
+  diagnosticBase: {
+    nftContract: string;
+    tokenId: string;
+    title: string;
+  }
+) {
+  try {
+    const contract = new Contract(nftContract, erc721MetadataAbi, getRpcProvider());
+    const tokenUriRaw = (await withTimeout(contract.tokenURI(tokenId))) as string;
+
+    const directImageUrl = normalizeNftImageUrl(tokenUriRaw);
+    if (directImageUrl) {
+      logArtworkDiagnostic("resolved", {
+        ...diagnosticBase,
+        source: directImageUrl
+      });
+      return {
+        src: directImageUrl,
+        alt: `${title} NFT artwork preview`
+      };
+    }
+
+    const metadataUrl = normalizeMetadataUrl(tokenUriRaw);
+    if (!metadataUrl) {
+      logArtworkDiagnostic("fallback", {
+        ...diagnosticBase,
+        reason: "token_uri_unreadable"
+      });
+      return null;
+    }
+
+    const metadataPayload = await fetchMetadataPayload(metadataUrl);
+    if (!metadataPayload) {
+      logArtworkDiagnostic("fallback", {
+        ...diagnosticBase,
+        reason: "token_uri_metadata_fetch_failed"
+      });
+      return null;
+    }
+
+    const resolvedUrl = resolveImageFromMetadataPayload(metadataPayload);
+    if (!resolvedUrl) {
+      logArtworkDiagnostic("fallback", {
+        ...diagnosticBase,
+        reason: "token_uri_metadata_missing_image"
+      });
+      return null;
+    }
+
+    logArtworkDiagnostic("resolved", {
+      ...diagnosticBase,
+      source: resolvedUrl
+    });
+    return {
+      src: resolvedUrl,
+      alt: `${title} NFT artwork preview`
+    };
+  } catch {
+    logArtworkDiagnostic("fallback", {
+      ...diagnosticBase,
+      reason: "token_uri_contract_error"
+    });
+    return null;
+  }
+}
+
+async function fetchNftArtwork(nftContract: string, tokenId: bigint, title: string, fallbackIndex: number) {
+  const fallbackArtwork = getAuctionArtwork(fallbackIndex, title);
+  const diagnosticBase = {
+    nftContract,
+    tokenId: tokenId.toString(),
+    title
+  };
+
+  if (!alchemyApiKey) {
+    const tokenUriArtwork = await fetchTokenUriArtwork(nftContract, tokenId, title, diagnosticBase);
+    if (tokenUriArtwork) {
+      artworkCache.set(`${nftContract.toLowerCase()}:${tokenId.toString()}`, tokenUriArtwork);
+      return tokenUriArtwork;
+    }
+
+    logArtworkDiagnostic("fallback", { ...diagnosticBase, reason: "missing_alchemy_api_key" });
+    return fallbackArtwork;
+  }
+
+  const cacheKey = `${nftContract.toLowerCase()}:${tokenId.toString()}`;
+  if (artworkCache.has(cacheKey)) {
+    const cachedArtwork = artworkCache.get(cacheKey);
+    logArtworkDiagnostic(cachedArtwork ? "cache_hit" : "fallback", {
+      ...diagnosticBase,
+      reason: cachedArtwork ? "cached_remote_artwork" : "cached_fallback"
+    });
+    return cachedArtwork ?? fallbackArtwork;
+  }
+
+  try {
+    const metadataUrl = new URL(`https://eth-sepolia.g.alchemy.com/nft/v3/${alchemyApiKey}/getNFTMetadata`);
+    metadataUrl.searchParams.set("contractAddress", nftContract);
+    metadataUrl.searchParams.set("tokenId", tokenId.toString());
+    metadataUrl.searchParams.set("refreshCache", "false");
+
+    const response = await fetch(metadataUrl, {
+      headers: { accept: "application/json" },
+      next: { revalidate: 900 },
+      signal: AbortSignal.timeout(rpcTimeoutMs)
+    });
+
+    if (!response.ok) {
+      const tokenUriArtwork = await fetchTokenUriArtwork(nftContract, tokenId, title, diagnosticBase);
+      if (tokenUriArtwork) {
+        artworkCache.set(cacheKey, tokenUriArtwork);
+        return tokenUriArtwork;
+      }
+
+      artworkCache.set(cacheKey, null);
+      logArtworkDiagnostic("fallback", {
+        ...diagnosticBase,
+        reason: `alchemy_http_${response.status}`
+      });
+      return fallbackArtwork;
+    }
+
+    const payload = (await response.json()) as Record<string, any>;
+    const resolvedUrl =
+      normalizeArtworkSource(payload.image?.cachedUrl) ??
+      normalizeArtworkSource(payload.image?.thumbnailUrl) ??
+      normalizeArtworkSource(payload.image?.pngUrl) ??
+      normalizeArtworkSource(payload.image?.originalUrl) ??
+      normalizeArtworkSource(payload.raw?.metadata?.image) ??
+      normalizeArtworkSource(payload.raw?.metadata?.image_url) ??
+      normalizeArtworkSource(payload.raw?.metadata?.image_data) ??
+      normalizeArtworkSource(payload.rawMetadata?.image) ??
+      normalizeArtworkSource(payload.metadata?.image) ??
+      normalizeArtworkSource(payload.metadata?.image_url) ??
+      resolveArtworkFromArray(payload.media) ??
+      resolveImageFromMetadataPayload(payload.raw?.metadata ?? {}) ??
+      resolveImageFromMetadataPayload(payload.rawMetadata ?? {}) ??
+      resolveImageFromMetadataPayload(payload.metadata ?? {});
+
+    if (!resolvedUrl) {
+      const tokenUriArtwork = await fetchTokenUriArtwork(nftContract, tokenId, title, diagnosticBase);
+      if (tokenUriArtwork) {
+        artworkCache.set(cacheKey, tokenUriArtwork);
+        return tokenUriArtwork;
+      }
+
+      artworkCache.set(cacheKey, null);
+      logArtworkDiagnostic("fallback", {
+        ...diagnosticBase,
+        reason: "metadata_missing_image"
+      });
+      return fallbackArtwork;
+    }
+
+    const artwork = {
+      src: resolvedUrl,
+      alt: `${title} NFT artwork preview`
+    };
+    artworkCache.set(cacheKey, artwork);
+    logArtworkDiagnostic("resolved", {
+      ...diagnosticBase,
+      source: resolvedUrl
+    });
+    return artwork;
+  } catch {
+    const tokenUriArtwork = await fetchTokenUriArtwork(nftContract, tokenId, title, diagnosticBase);
+    if (tokenUriArtwork) {
+      artworkCache.set(cacheKey, tokenUriArtwork);
+      return tokenUriArtwork;
+    }
+
+    artworkCache.set(cacheKey, null);
+    logArtworkDiagnostic("fallback", {
+      ...diagnosticBase,
+      reason: "alchemy_fetch_error"
+    });
+    return fallbackArtwork;
+  }
+}
+
 function isNumericAuctionId(value: string) {
   return /^[0-9]+$/.test(value);
 }
@@ -139,8 +515,8 @@ function formatRemainingTime(endTime: bigint, state: AuctionState) {
   return `Ends ${formatUtcTimestamp(endTime)}`;
 }
 
-function hasCloseWindowEnded(endTime: bigint) {
-  return Number(endTime) <= Math.floor(Date.now() / 1000);
+function hasCloseWindowEnded(endTime: bigint, nowUnix: number) {
+  return Number(endTime) <= nowUnix;
 }
 
 function getAuctionSynopsis(state: AuctionState, collectionLabel: string) {
@@ -254,9 +630,10 @@ function buildTimeline(
   createdAt: bigint,
   endTime: bigint,
   bidCount: bigint,
-  lastBlockTimestamp: bigint
+  lastBlockTimestamp: bigint,
+  nowUnix: number
 ) {
-  const hasEnded = state === "active" && hasCloseWindowEnded(endTime);
+  const hasEnded = state === "active" && hasCloseWindowEnded(endTime, nowUnix);
 
   return [
     {
@@ -306,10 +683,12 @@ function buildLiveAuctionRecord(
   phase2: LiveAuctionPhase2,
   startingPrice: bigint,
   collectionName: string,
-  sellerPayout: bigint
+  sellerPayout: bigint,
+  artwork: AuctionRecord["artwork"],
+  nowUnix: number
 ): AuctionRecord {
   const state = mapLiveAuctionState(core.state);
-  const hasEnded = state === "active" && hasCloseWindowEnded(core.endTime);
+  const hasEnded = state === "active" && hasCloseWindowEnded(core.endTime, nowUnix);
   const lotLabel = `Lot #${auctionId} / token ${core.tokenId.toString()}`;
   const formatLabel = core.isVickrey ? "Vickrey sealed bid" : "Confidential auction";
   const openingBidLabel =
@@ -347,10 +726,11 @@ function buildLiveAuctionRecord(
 
   return {
     activityScore: Number(phase2.bidCount),
+    artwork,
     collection: collectionName,
     confidentialityLabel:
       state === "active" && hasEnded
-        ? "Close window reached"
+        ? "Closed"
         : core.isVickrey
           ? "Encrypted Vickrey lane active"
           : "Confidential bidding lane active",
@@ -393,14 +773,14 @@ function buildLiveAuctionRecord(
       state === "active" && hasEnded
         ? `${collectionName} has passed its bidding window and now needs a settlement trigger before a winner or no-winner outcome can be finalized.`
         : getAuctionSynopsis(state, collectionName),
-    timeLabel: state === "active" && hasEnded ? "Close window reached" : formatRemainingTime(core.endTime, state),
-    timeline: buildTimeline(state, phase2.createdAt, core.endTime, phase2.bidCount, core.lastBlockTimestamp),
+    timeLabel: state === "active" && hasEnded ? "Closed" : formatRemainingTime(core.endTime, state),
+    timeline: buildTimeline(state, phase2.createdAt, core.endTime, phase2.bidCount, core.lastBlockTimestamp, nowUnix),
     title: `Auction #${auctionId}`,
     visual: buildVisual(auctionId)
   };
 }
 
-async function loadLiveAuctionRecord(auctionId: number): Promise<AuctionRecord | null> {
+async function loadLiveAuctionRecord(auctionId: number, nowUnix: number): Promise<AuctionRecord | null> {
   if (!isAddressLike(appConfig.contracts.marketProxyAddress)) {
     return null;
   }
@@ -429,7 +809,8 @@ async function loadLiveAuctionRecord(auctionId: number): Promise<AuctionRecord |
       winner: "0x0000000000000000000000000000000000000000"
     };
 
-    const [phase2Settled, startingPriceSettled, collectionName, sellerPayoutSettled] = await Promise.all([
+    const title = `Auction #${auctionId}`;
+    const [phase2Settled, startingPriceSettled, collectionName, sellerPayoutSettled, artwork] = await Promise.all([
       withTimeout(market.getAuctionPhase2Details(auctionId))
         .then((result) => ({
           assetClaimed: result.assetClaimed as boolean,
@@ -442,7 +823,8 @@ async function loadLiveAuctionRecord(auctionId: number): Promise<AuctionRecord |
         .catch(() => phase2Defaults),
       withTimeout(market.getAuctionStartingPrice(auctionId)).catch(() => 0n),
       readCollectionName(core.nftContract),
-      withTimeout(market.previewSellerPayout(auctionId)).catch(() => 0n)
+      withTimeout(market.previewSellerPayout(auctionId)).catch(() => 0n),
+      fetchNftArtwork(core.nftContract, core.tokenId, title, auctionId)
     ]);
     const record = buildLiveAuctionRecord(
       auctionId,
@@ -450,7 +832,9 @@ async function loadLiveAuctionRecord(auctionId: number): Promise<AuctionRecord |
       phase2Settled,
       startingPriceSettled as bigint,
       collectionName,
-      sellerPayoutSettled as bigint
+      sellerPayoutSettled as bigint,
+      artwork,
+      nowUnix
     );
     return record;
   } catch {
@@ -458,7 +842,7 @@ async function loadLiveAuctionRecord(auctionId: number): Promise<AuctionRecord |
   }
 }
 
-async function listLiveAuctions() {
+const listLiveAuctions = cache(async () => {
   if (!isAddressLike(appConfig.contracts.marketProxyAddress)) {
     return [];
   }
@@ -466,6 +850,7 @@ async function listLiveAuctions() {
   try {
     const market = getMarketContract();
     const auctionCounter = Number(await withTimeout(market.auctionCounter()));
+    const nowUnix = Math.floor(Date.now() / 1000);
 
     if (!Number.isFinite(auctionCounter) || auctionCounter <= 0) {
       return [];
@@ -473,24 +858,24 @@ async function listLiveAuctions() {
 
     const firstAuctionId = Math.max(1, auctionCounter - liveAuctionWindow + 1);
     const records = await Promise.all(
-      Array.from({ length: auctionCounter - firstAuctionId + 1 }, (_, index) => loadLiveAuctionRecord(firstAuctionId + index))
+      Array.from({ length: auctionCounter - firstAuctionId + 1 }, (_, index) => loadLiveAuctionRecord(firstAuctionId + index, nowUnix))
     );
 
     return records.filter((record): record is AuctionRecord => record !== null);
   } catch {
     return [];
   }
-}
+});
 
-export async function listMarketplaceAuctions() {
+export const listMarketplaceAuctions = cache(async () => {
   const liveRecords = await listLiveAuctions();
   return liveRecords;
-}
+});
 
-export async function getMarketplaceAuctionById(auctionId: string) {
+export const getMarketplaceAuctionById = cache(async (auctionId: string) => {
   if (isNumericAuctionId(auctionId)) {
-    return loadLiveAuctionRecord(Number(auctionId));
+    return loadLiveAuctionRecord(Number(auctionId), Math.floor(Date.now() / 1000));
   }
 
   return getSeedAuctionById(auctionId);
-}
+});

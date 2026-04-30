@@ -1,0 +1,18 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="1200" rx="72" fill="#0A0B0E"/>
+  <rect x="72" y="72" width="1056" height="1056" rx="48" fill="#101216" stroke="#20242A" stroke-width="2"/>
+  <rect x="356" y="242" width="488" height="716" rx="84" fill="#14171D" stroke="#262A31" stroke-width="2"/>
+  <path d="M600 384L742 526L600 668L458 526L600 384Z" fill="url(#gem4)" stroke="#D2D7DF" stroke-width="8"/>
+  <path d="M600 432L708 526L600 620L492 526L600 432Z" fill="url(#core4)"/>
+  <defs>
+    <linearGradient id="gem4" x1="466" y1="410" x2="724" y2="646" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4F6F9"/>
+      <stop offset="0.48" stop-color="#D5DAE2"/>
+      <stop offset="1" stop-color="#A5ADBA"/>
+    </linearGradient>
+    <linearGradient id="core4" x1="600" y1="432" x2="600" y2="620" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D4D8E0"/>
+      <stop offset="1" stop-color="#8C95A1"/>
+    </linearGradient>
+  </defs>
+</svg>

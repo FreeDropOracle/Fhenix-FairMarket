@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Cormorant_Garamond, Oxanium } from "next/font/google";
+import { Cormorant_Garamond, JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
 
 import "@/app/globals.css";
 import { AppShell } from "@/components/app-shell";
@@ -11,10 +11,16 @@ const brandSerif = Cormorant_Garamond({
   variable: "--font-brand-serif"
 });
 
-const technoSans = Oxanium({
+const bodySans = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-techno-sans"
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-body-sans"
+});
+
+const dataMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-data-mono"
 });
 
 export const metadata: Metadata = {
@@ -23,13 +29,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#05030c"
+  themeColor: "#050505"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${brandSerif.variable} ${technoSans.variable}`}>
+      <body className={`${brandSerif.variable} ${bodySans.variable} ${dataMono.variable}`}>
         <WalletProvider>
           <AppShell>{children}</AppShell>
         </WalletProvider>

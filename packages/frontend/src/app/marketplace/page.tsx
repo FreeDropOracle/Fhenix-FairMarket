@@ -1,12 +1,11 @@
 import Link from "next/link";
 
-import { AuctionCard } from "@/components/auction-card";
+import { MarketplaceGridShell } from "@/components/marketplace-grid-shell";
 import { StatusPill } from "@/components/status-pill";
 import {
   auctionSortOptions,
   auctionStateOptions,
   filterAuctions,
-  getMarketplaceStats,
   sortAuctions,
   type AuctionSortKey,
   type AuctionStateFilter
@@ -54,117 +53,129 @@ function buildMarketplaceHref(state: AuctionStateFilter, sort: AuctionSortKey) {
   return query.length > 0 ? `/marketplace?${query}` : "/marketplace";
 }
 
+const primaryMarketplaceViews = [
+  {
+    href: "/marketplace",
+    label: "All",
+    matches: (state: AuctionStateFilter, sort: AuctionSortKey) => state === "all" && sort === "ending"
+  },
+  {
+    href: buildMarketplaceHref("active", "activity"),
+    label: "Live",
+    matches: (state: AuctionStateFilter, sort: AuctionSortKey) => state === "active" && sort === "activity"
+  },
+  {
+    href: buildMarketplaceHref("active", "ending"),
+    label: "Ending Soon",
+    matches: (state: AuctionStateFilter, sort: AuctionSortKey) => state === "active" && sort === "ending"
+  },
+  {
+    href: "/portfolio",
+    label: "My Activity",
+    matches: () => false
+  }
+] as const;
+
 export default async function MarketplacePage({ searchParams }: MarketplacePageProps) {
   const params = (await searchParams) ?? {};
   const activeState = normalizeStateFilter(params.state);
   const activeSort = normalizeSortKey(params.sort);
   const records = await listMarketplaceAuctions();
-  const stats = getMarketplaceStats(records);
   const filtered = filterAuctions(records, activeState);
   const auctions = sortAuctions(filtered, activeSort);
+  const activeViewLabel =
+    primaryMarketplaceViews.find((view) => view.matches(activeState, activeSort))?.label ?? "Custom view";
 
   return (
     <main className="page-grid marketplace-shell">
-      <section className="marketplace-hero">
-        <div className="marketplace-hero__copy">
-          <p className="eyebrow">Marketplace</p>
-          <h1 className="hero-title marketplace-hero__title">Confidential auctions, without the noise.</h1>
-          <p className="hero-summary">
-            Browse lots, inspect each auction clearly, and move toward escrow or bidding without extra clutter.
-          </p>
-          <div className="hero-actions">
+      <section className="section-block section-block--compact marketplace-intro">
+        <div className="marketplace-intro__head">
+          <div>
+            <p className="eyebrow">Marketplace</p>
+            <h1 className="section-title marketplace-intro__title">Explore confidential lots without the clutter.</h1>
+            <p className="section-note marketplace-intro__copy">
+              Scan the active desk quickly, open the right lot, and keep deeper protocol detail tucked away until you
+              actually need it.
+            </p>
+          </div>
+
+          <div className="marketplace-intro__actions">
             <Link className="primary-action" href="/marketplace/create">
-              Create auction
+              Launch Auction
             </Link>
             <Link className="secondary-action" href="/portfolio">
-              Open portfolio
+              Open Portfolio
             </Link>
           </div>
         </div>
-        <div className="marketplace-overview-grid">
-          {stats.map((stat) => (
-            <article key={stat.label} className="marketplace-overview-card">
-              <span className="signal-label">{stat.label}</span>
-              <strong className="marketplace-overview-card__value">{stat.value}</strong>
-              <p className="marketplace-overview-card__note">{stat.note}</p>
-            </article>
-          ))}
-        </div>
       </section>
 
-      <section className="section-block">
-        <div className="section-header">
-          <div>
-            <p className="eyebrow">Auction desk controls</p>
-            <h2 className="section-title">Filter the surface, then drop into the right lot.</h2>
+      <section className="marketplace-toolbar marketplace-toolbar--catalog">
+        <div className="marketplace-toolbar__rail">
+          <div className="filter-group filter-group--primary">
+            <div className="filter-group__items">
+              {primaryMarketplaceViews.map((option) => (
+                <Link
+                  key={option.label}
+                  className="filter-chip"
+                  data-active={option.matches(activeState, activeSort)}
+                  href={option.href}
+                >
+                  {option.label}
+                </Link>
+              ))}
+            </div>
           </div>
-          <div className="marketplace-toolbar__summary">
+
+          <div className="marketplace-toolbar__meta">
             <StatusPill
-              label={activeState === "all" ? "All desks visible" : `${activeState} desk`}
+              label={activeViewLabel}
               tone={activeState === "all" ? "neutral" : activeState === "resolving" ? "warning" : activeState === "voided" ? "danger" : "success"}
             />
-            <p className="section-note">
-              {auctions.length} lot{auctions.length === 1 ? "" : "s"} surfaced with the current filter.
+            <p className="marketplace-toolbar__count">
+              {auctions.length} lot{auctions.length === 1 ? "" : "s"} ready
             </p>
-          </div>
-        </div>
+            <details className="marketplace-advanced-filters">
+              <summary>More filters</summary>
+              <div className="marketplace-advanced-filters__grid">
+                <div className="filter-group">
+                  <span className="filter-group__label">Auction state</span>
+                  <div className="filter-group__items">
+                    {auctionStateOptions.map((option) => (
+                      <Link
+                        key={option.value}
+                        className="filter-chip"
+                        data-active={activeState === option.value}
+                        href={buildMarketplaceHref(option.value, activeSort)}
+                      >
+                        {option.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
 
-        <div className="marketplace-toolbar">
-          <div className="filter-group">
-            <span className="filter-group__label">Desk state</span>
-            <div className="filter-group__items">
-              {auctionStateOptions.map((option) => (
-                <Link
-                  key={option.value}
-                  className="filter-chip"
-                  data-active={activeState === option.value}
-                  href={buildMarketplaceHref(option.value, activeSort)}
-                >
-                  {option.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          <div className="filter-group">
-            <span className="filter-group__label">Sort by</span>
-            <div className="filter-group__items">
-              {auctionSortOptions.map((option) => (
-                <Link
-                  key={option.value}
-                  className="filter-chip"
-                  data-active={activeSort === option.value}
-                  href={buildMarketplaceHref(activeState, option.value)}
-                >
-                  {option.label}
-                </Link>
-              ))}
-            </div>
+                <div className="filter-group">
+                  <span className="filter-group__label">Sort by</span>
+                  <div className="filter-group__items">
+                    {auctionSortOptions.map((option) => (
+                      <Link
+                        key={option.value}
+                        className="filter-chip"
+                        data-active={activeSort === option.value}
+                        href={buildMarketplaceHref(activeState, option.value)}
+                      >
+                        {option.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </details>
           </div>
         </div>
       </section>
 
-      <section className="auction-grid">
-        {auctions.length > 0 ? (
-          auctions.map((auction) => <AuctionCard key={auction.id} auction={auction} />)
-        ) : (
-          <article className="empty-state">
-            <StatusPill label="No lots in this slice" tone="warning" />
-            <h2 className="placeholder-title">This desk is quiet right now.</h2>
-            <p className="placeholder-copy">
-              Change the filter or create a new confidential auction to see more activity here.
-            </p>
-            <div className="hero-actions">
-              <Link className="secondary-action" href="/marketplace">
-                Reset filters
-              </Link>
-              <Link className="primary-action" href="/marketplace/create">
-                Create auction
-              </Link>
-            </div>
-          </article>
-        )}
-      </section>
+      <MarketplaceGridShell auctions={auctions} />
     </main>
   );
 }

@@ -56,7 +56,7 @@ export function HeroCrest() {
           alt=""
           fill
           priority
-          sizes="(max-width: 860px) 180px, 240px"
+          sizes="(max-width: 860px) 260px, 420px"
         />
       </div>
     </div>

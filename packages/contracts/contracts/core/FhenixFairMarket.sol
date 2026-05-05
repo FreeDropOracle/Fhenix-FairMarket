@@ -72,6 +72,7 @@ contract FhenixFairMarket is
     error InvalidDuration(uint256 providedDuration);
     error InvalidStateTransition(AuctionState fromState, AuctionState toState);
     error AssetAlreadyClaimed(uint256 auctionId);
+    error LegacyWitnessClaimsDisabled();
     error BidBelowStartingPrice(uint256 auctionId, address bidder, uint256 requiredMinimum);
     error BidExceedsEscrow(uint256 auctionId, address bidder);
     error FinalizeRewardAlreadyClaimed(uint256 auctionId);
@@ -734,29 +735,10 @@ contract FhenixFairMarket is
 
     function claimShieldedAsset(uint256 auctionId, bytes32 secret, bytes32 nullifier, address recipient)
         external
-        nonReentrant
-        auctionExists(auctionId)
-        onlyAuctionState(auctionId, AuctionState.FINALIZED)
+        pure
     {
-        Auction storage auction = _auctions[auctionId];
-        if (auction.assetClaimed) {
-            revert AssetAlreadyClaimed(auctionId);
-        }
-        if (recipient == address(0)) {
-            revert ZeroAddress();
-        }
-
-        bytes32 winningIdentityHash = _winningCommitments[auctionId];
-        bytes32 expectedCommitmentHash = _resolveShieldedCommitment(auctionId, winningIdentityHash);
-        bytes32 providedCommitmentHash = keccak256(abi.encodePacked(secret, nullifier));
-        if (expectedCommitmentHash == bytes32(0) || providedCommitmentHash != expectedCommitmentHash) {
-            revert UnauthorizedShieldedAssetClaim(auctionId, providedCommitmentHash, expectedCommitmentHash);
-        }
-
-        auction.assetClaimed = true;
-        NFTGuard.releaseFromEscrow(auction.nftContract, address(this), recipient, auction.tokenId);
-
-        emit AssetClaimed(auctionId, recipient, auction.tokenId);
+        (auctionId, secret, nullifier, recipient);
+        revert LegacyWitnessClaimsDisabled();
     }
 
     function claimShieldedAssetWithAuthorization(

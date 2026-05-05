@@ -2,6 +2,8 @@
 pragma solidity ^0.8.25;
 
 interface IShieldedEscrowVault {
+    error LegacyWitnessClaimsDisabled();
+
     function lockEscrow(uint256 auctionId, bytes32 commitmentHash, address claimAuthority) external payable;
 
     function settleWinningCommitment(uint256 auctionId, bytes32 commitmentHash, uint256 winningAmount)
@@ -25,6 +27,7 @@ interface IShieldedEscrowVault {
 
     function claimRefund(bytes32 secret, bytes32 nullifier, address payable recipient)
         external
+        pure
         returns (uint256 principalAmount, uint256 compensationAmount);
 
     function claimRefundWithAuthorization(

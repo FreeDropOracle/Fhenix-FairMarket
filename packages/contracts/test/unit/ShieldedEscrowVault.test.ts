@@ -277,6 +277,48 @@ describe("ShieldedEscrowVault Privacy Phase 1", function () {
     ).to.be.revertedWithCustomError(vault, "InvalidClaimAuthority");
   });
 
+  it("blocks calldata-copyable legacy witness refund claims while authorization still works", async function () {
+    const { bidder, market, outsider, seller, settlementEngine, vault } = await loadFixture(createShieldedFixture);
+    const note = buildShieldedNote("legacy-refund-front-run");
+    const shieldedAmount = ethers.parseEther("1");
+
+    await market
+      .connect(bidder)
+      .lockShieldedEscrow(1n, note.identityHash, note.commitment, note.claimAuthority.address, { value: shieldedAmount });
+
+    const auction = await market.getAuction(1n);
+    const details = await market.getAuctionPhase2Details(1n);
+    const now = BigInt(await time.latest());
+    const createdAt = BigInt(details[3]);
+    const endTime = BigInt(auction[3]);
+    const expectedSlash = await settlementEngine.computeCancellationSlash(
+      BigInt(auction[4]),
+      now - createdAt,
+      endTime - createdAt,
+      shieldedAmount
+    );
+
+    await market.connect(seller).cancelAuction(1n);
+
+    await expect(
+      vault.connect(outsider).claimRefund(note.secret, note.nullifier, outsider.address)
+    ).to.be.revertedWithCustomError(vault, "LegacyWitnessClaimsDisabled");
+
+    const deadline = BigInt((await time.latest()) + 3600);
+    const refundSignature = await signRefundClaim(
+      await vault.getAddress(),
+      1n,
+      note.commitment,
+      bidder.address,
+      deadline,
+      note.claimAuthority
+    );
+
+    await expect(() =>
+      vault.connect(outsider).claimRefundWithAuthorization(note.commitment, bidder.address, deadline, refundSignature)
+    ).to.changeEtherBalances([vault, bidder], [-(shieldedAmount + expectedSlash), shieldedAmount + expectedSlash]);
+  });
+
   it("keeps note metadata readable without exposing raw shielded amounts to unauthorized callers", async function () {
     const { adapter, bidder, market, outsider, owner, vault } = await loadFixture(createShieldedFixture);
     const note = buildShieldedNote("preview-gate-5");

@@ -274,26 +274,11 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
     function claimRefund(bytes32 secret, bytes32 nullifier, address payable recipient)
         external
         override
-        nonReentrant
+        pure
         returns (uint256 principalAmount, uint256 compensationAmount)
     {
-        if (recipient == address(0)) {
-            revert ZeroAddress();
-        }
-
-        bytes32 commitmentHash = keccak256(abi.encodePacked(secret, nullifier));
-        bytes32 nullifierHash = keccak256(abi.encodePacked(nullifier));
-        if (nullifierSpent[nullifierHash]) {
-            revert NullifierAlreadySpent(nullifierHash);
-        }
-
-        nullifierSpent[nullifierHash] = true;
-        (uint256 resolvedAuctionId, uint256 resolvedPrincipal, uint256 resolvedCompensation) =
-            _releaseRefund(commitmentHash, nullifierHash, recipient);
-
-        principalAmount = resolvedPrincipal;
-        compensationAmount = resolvedCompensation;
-        emit ShieldedRefundClaimed(resolvedAuctionId, nullifierHash, recipient, principalAmount, compensationAmount);
+        (secret, nullifier, recipient, principalAmount, compensationAmount);
+        revert LegacyWitnessClaimsDisabled();
     }
 
     function claimRefundWithAuthorization(

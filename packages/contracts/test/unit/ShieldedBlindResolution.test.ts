@@ -223,7 +223,7 @@ describe("Privacy Phase 2 blind resolution", function () {
   });
 
   it("finalizes a shielded winner, routes only the winning amount into seller payout, and defers NFT reveal until claim", async function () {
-    const { adapter, avs, avsOperatorOne, avsOperatorTwo, bidder, bidderTwo, market, nft, owner, registry, seller, vault } =
+    const { adapter, avs, avsOperatorOne, avsOperatorTwo, bidder, bidderTwo, market, nft, outsider, owner, registry, seller, vault } =
       await loadFixture(createShieldedBlindFixture);
 
     const winnerNote = buildCommitment("winner");
@@ -342,6 +342,10 @@ describe("Privacy Phase 2 blind resolution", function () {
       BigInt(assetDeadline),
       winnerNote.claimAuthority
     );
+
+    await expect(
+      market.connect(outsider).claimShieldedAsset(1n, winnerNote.secret, winnerNote.nullifier, outsider.address)
+    ).to.be.revertedWithCustomError(market, "LegacyWitnessClaimsDisabled");
 
     await market
       .connect(owner)

@@ -6,7 +6,7 @@ This workspace contains the runnable Phase 1 and Phase 2 contract foundation for
 
 - `contracts/core/FhenixFairMarket.sol`: upgradeable auction core with escrow locking, encrypted bid placement, guarded state transitions, refunds, seller settlement, and fallback logic
 - `contracts/core/FhenixFairMarketProxy.sol`: thin `ERC1967Proxy` wrapper for UUPS deployments
-- `contracts/adapters/CofheAdapter.sol`: adapter boundary that keeps the core contract isolated from future CoFHE vendor changes
+- `contracts/adapters/CofheAdapter.sol`: local-development prototype adapter boundary; the current reversible placeholder encoding is not production-private
 - `contracts/adapters/NFTGuard.sol`: escrow helper for NFT custody and terminal asset release
 - `contracts/privacy/ShieldedEscrowVault.sol`: Privacy Phase 1 vault for commitment-based escrow deposits and shielded refund claims
 - `contracts/privacy/ShieldedIdentityRegistry.sol`: Privacy Phase 3 alias layer that separates settlement identity from raw escrow-note commitment
@@ -41,6 +41,7 @@ pnpm coverage
 ## Notes
 
 - The issue text references an older package name for the CoFHE Hardhat plugin. The maintained package integrated here is `cofhe-hardhat-plugin`.
+- Security status: this workspace is under remediation. The current `CofheAdapter` is local-development only and deployment scripts intentionally block the prototype adapter on public networks.
 - The CoFHE Hardhat plugin is installed and version-pinned in the workspace so later Fhenix-network phases can activate it without reworking dependencies.
 - The default Phase 1 test path stays on the deterministic local adapter/mock implementation to keep the architectural foundation stable while full network-backed CoFHE flows are deferred to later phases.
 - The adapter now models typed ciphertext handles (`euint32`, `ebool`), comparison helpers (`lte`, `gt`), conditional selection, and encrypted bid-coverage checks.

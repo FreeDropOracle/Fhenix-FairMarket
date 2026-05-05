@@ -1,6 +1,6 @@
 # Fhenix-FairMarket
 
-> **Sealed-Bid Auction Protocol** — Privacy-preserving, gas-efficient, and censorship-resistant, powered by CoFHE Coprocessing and EigenLayer AVS.
+> **Sealed-Bid Auction Prototype** — currently under security remediation; not yet production-private.
 
 <div align="center">
 
@@ -8,7 +8,7 @@
 [![Solidity](https://img.shields.io/badge/Solidity-^0.8.25-363636?logo=solidity)](https://soliditylang.org)
 [![Fhenix](https://img.shields.io/badge/Fhenix-fhEVM-6C3CE1)](https://fhenix.io)
 [![EigenLayer](https://img.shields.io/badge/EigenLayer-AVS-0ea5e9)](https://eigenlayer.xyz)
-[![Status](https://img.shields.io/badge/Status-Sepolia%20Live-22c55e)](https://fhenix-fair-market-app.vercel.app/portfolio)
+[![Status](https://img.shields.io/badge/Status-Security%20Review-d97706)](./SECURITY_STATUS.md)
 [![Network](https://img.shields.io/badge/Network-Ethereum%20Sepolia-2563eb)](https://sepolia.etherscan.io)
 [![Version](https://img.shields.io/badge/Version-2.0-orange)]()
 
@@ -18,15 +18,22 @@
 
 [![Landing Page](https://img.shields.io/badge/Landing%20Page-Open-7c3aed?style=for-the-badge)](https://fhenix-fair-market-lp.vercel.app/)
 [![Documentation](https://img.shields.io/badge/Documentation-Read-0ea5e9?style=for-the-badge)](https://doc-fhenix-fair-market.vercel.app/)
-[![Live App](https://img.shields.io/badge/Live%20App-Sepolia-22c55e?style=for-the-badge)](https://fhenix-fair-market-app.vercel.app/portfolio)
+[![Prototype App](https://img.shields.io/badge/Prototype%20App-Sepolia-d97706?style=for-the-badge)](https://fhenix-fair-market-app.vercel.app/portfolio)
 
 </div>
+
+## Security Warning
+
+- The current repository is in **security remediation**.
+- The shipped `CofheAdapter` path is a **prototype** and does **not** provide production-grade bid privacy.
+- Public or testnet deployments should be treated as **review/demo-only** until the remediation work is complete.
+- See [SECURITY_STATUS.md](./SECURITY_STATUS.md) for the current posture.
 
 ## Public Entry Points
 
 - **Landing Page:** project overview and public-facing introduction
 - **Documentation:** technical and user documentation
-- **Live App:** deployed application connected to Ethereum Sepolia
+- **Prototype App:** deployed review build connected to Ethereum Sepolia
 
 > Public links:
 > Landing - `https://fhenix-fair-market-lp.vercel.app/`
@@ -67,9 +74,9 @@
 
 ## 🔷 Overview
 
-**Fhenix-FairMarket** is a decentralized sealed-bid auction protocol that resolves the fundamental tension between **absolute privacy** and **economic viability** in on-chain auctions.
+**Fhenix-FairMarket** is a decentralized sealed-bid auction prototype exploring the tension between privacy goals and economic viability in on-chain auctions.
 
-Instead of executing expensive Fully Homomorphic Encryption (FHE) operations on-chain, the protocol adopts an **Asynchronous FHE Coprocessing** model via the `CoFHE` architecture, backed by `EigenLayer AVS` for economic verification — reducing gas costs by **~99.9%** while preserving mathematical integrity and eliminating any trusted intermediary.
+Instead of executing expensive Fully Homomorphic Encryption (FHE) operations on-chain, the protocol adopts an **Asynchronous FHE Coprocessing** model via the `CoFHE` architecture, backed by `EigenLayer AVS` for economic verification. The current repository still contains prototype privacy plumbing and should not be described as production-private until the remediation issues are closed.
 
 ### Key Innovations
 

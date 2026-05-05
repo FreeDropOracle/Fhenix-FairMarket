@@ -46,7 +46,7 @@ export function AuctionCard({ auction }: AuctionCardProps) {
 
       <div className="auction-card__body">
         <div className="auction-card__headline">
-          <p className="auction-card__eyebrow">{auction.confidentialityLabel}</p>
+          <p className="auction-card__eyebrow">{auction.bidLaneLabel}</p>
           <h2 className="auction-card__title">{auction.title}</h2>
         </div>
 

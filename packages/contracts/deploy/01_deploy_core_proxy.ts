@@ -1,10 +1,17 @@
 import { ethers, network } from "hardhat";
 
-import { readDeploymentFile, resolveDeploymentPaths, resolveNetworkDescriptor, writeJsonFile } from "./utils";
+import {
+  assertPrototypeAdapterLocalOnly,
+  readDeploymentFile,
+  resolveDeploymentPaths,
+  resolveNetworkDescriptor,
+  writeJsonFile
+} from "./utils";
 
 async function main() {
   const { deploymentFile } = resolveDeploymentPaths(network.name);
   const descriptor = await resolveNetworkDescriptor(network.name);
+  assertPrototypeAdapterLocalOnly(descriptor);
 
   const existing = await readDeploymentFile(deploymentFile);
   let adapterAddress = process.env.PHASE1_ADAPTER_ADDRESS || existing.adapter;

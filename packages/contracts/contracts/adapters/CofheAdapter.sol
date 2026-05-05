@@ -4,6 +4,9 @@ pragma solidity ^0.8.25;
 import "../interfaces/ICofheAdapter.sol";
 import "../utils/CofheCiphertextEncoding.sol";
 
+/// @notice Local-development prototype adapter only.
+/// @dev This adapter uses reversible placeholder encoding and MUST NOT be used
+///      as a production privacy boundary on public networks.
 contract CofheAdapter is ICofheAdapter {
     using CofheCiphertextEncoding for bytes32;
 

@@ -92,7 +92,7 @@ export default async function MarketplacePage({ searchParams }: MarketplacePageP
         <div className="marketplace-intro__head">
           <div>
             <p className="eyebrow">Marketplace</p>
-            <h1 className="section-title marketplace-intro__title">Explore confidential lots without the clutter.</h1>
+            <h1 className="section-title marketplace-intro__title">Explore sealed-bid prototype lots without the clutter.</h1>
             <p className="section-note marketplace-intro__copy">
               Scan the active desk quickly, open the right lot, and keep deeper protocol detail tucked away until you
               actually need it.

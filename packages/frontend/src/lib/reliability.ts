@@ -35,7 +35,7 @@ export type MobileReadinessPoint = {
 export const protocolSignals: ProtocolSignal[] = [
   {
     label: "Settlement",
-    value: "Confidential until completion",
+    value: "Sealed until completion",
     tone: "success",
     note: "Winner selection stays hidden until the auction is fully resolved."
   },

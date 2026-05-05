@@ -927,7 +927,6 @@ select:focus-visible {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.auction-card__confidentiality,
 .auction-card__summary,
 .timeline-row__value,
 .detail-card__copy,
@@ -935,14 +934,6 @@ select:focus-visible {
   margin: 0;
   color: var(--text-mid);
   line-height: 1.65;
-}
-.auction-card__confidentiality {
-  color: var(--text-mid);
-  font-size: 0.84rem;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 .auction-card__metrics,
 .summary-signal-grid,

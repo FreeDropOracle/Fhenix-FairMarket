@@ -1,5 +1,12 @@
 # Security Model
 
+## Current Prototype Limitations
+
+- The current `CofheAdapter` path is a prototype and does not provide production-grade ciphertext privacy.
+- Public-network deployments must not rely on the current adapter as proof of private bidding.
+- Legacy witness claim paths are being retired in favor of authorization-based claims because calldata-visible secrets are unsafe.
+- Shielded bid coverage and fallback accounting still require the follow-up remediation items tracked in the security plan.
+
 ## Trust Boundaries
 
 - **Market contract**
@@ -24,6 +31,8 @@
 
 ## Key Failure Modes
 
+- **Prototype bid privacy misunderstood as production privacy**
+  - Mitigation: explicit repository warning, `SECURITY_STATUS.md`, frontend review language, and deployment guards for the current adapter path.
 - **Keeper outage**
   - Mitigation: backfill from chain state, metrics freshness alerts, distributed finalize lock.
 - **CoFHE delay**
@@ -32,6 +41,12 @@
   - Mitigation: digest verification and symbolic slashing log entries.
 - **User misconfiguration**
   - Mitigation: Sepolia-only app guard, explicit contract registry readiness, generated runtime env snippets.
+
+## Current Operator Guidance
+
+- Treat the current stack as review/demo-only on public testnets.
+- Do not market the current bid lane as mathematically private until the real opaque-ciphertext path lands.
+- Prefer local development networks for adapter and settlement rehearsals while remediation remains open.
 
 ## Audit Focus
 

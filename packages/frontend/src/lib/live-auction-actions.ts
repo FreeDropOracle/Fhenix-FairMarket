@@ -12,6 +12,7 @@ const marketInterface = new Interface([
 const CIPHERTEXT_KIND_SHIFT = 248n;
 const EUINT96_KIND = 3n;
 const MAX_EUINT96_VALUE = (1n << 96n) - 1n;
+const LOCAL_PROTOTYPE_CHAIN_IDS = new Set(["0x539", "0x7a69"]);
 
 type JsonRpcReceipt = {
   status?: string;
@@ -62,9 +63,15 @@ function toHexQuantity(value: bigint) {
   return `0x${value.toString(16)}`;
 }
 
+async function readChainId(provider: Eip1193Provider) {
+  return ((await provider.request({
+    method: "eth_chainId"
+  })) as string).toLowerCase();
+}
+
 function encodeEuint96(value: bigint) {
   if (value < 0n || value > MAX_EUINT96_VALUE) {
-    throw new Error("Bid amount is outside the supported encrypted range.");
+    throw new Error("Bid amount is outside the current prototype bid-handle range.");
   }
 
   const encoded = (EUINT96_KIND << CIPHERTEXT_KIND_SHIFT) | value;
@@ -139,6 +146,17 @@ async function waitForReceipt(provider: Eip1193Provider, txHash: string, timeout
   }
 
   throw new Error("Transaction confirmation timed out.");
+}
+
+async function assertPrototypeBidPathAllowed(provider: Eip1193Provider) {
+  const chainId = await readChainId(provider);
+  if (LOCAL_PROTOTYPE_CHAIN_IDS.has(chainId)) {
+    return;
+  }
+
+  throw new Error(
+    "Prototype wallet bidding is disabled on this network until real CoFHE ciphertext-input support is wired into the frontend."
+  );
 }
 
 async function readEncryptedBidWithWallet(
@@ -236,10 +254,12 @@ export async function placeBidWithWallet({
 }: PlaceBidParams): Promise<PlaceBidResult> {
   const normalizedAccount = getAddress(account);
   const normalizedMarketAddress = getAddress(marketAddress);
-  const encryptedBid = encodeEuint96(amountWei);
 
   try {
-    onProgress?.("Preparing the confidential bid envelope...");
+    await assertPrototypeBidPathAllowed(provider);
+
+    const encryptedBid = encodeEuint96(amountWei);
+    onProgress?.("Preparing the local prototype bid envelope...");
     onProgress?.("Confirm the bid transaction in your wallet...");
     const txHash = await sendTransaction(provider, {
       from: normalizedAccount,
@@ -250,7 +270,7 @@ export async function placeBidWithWallet({
     onProgress?.("Waiting for the bid transaction confirmation...");
     const receipt = await waitForReceipt(provider, txHash);
     if (receipt.status !== "0x1") {
-      throw new Error("Confidential bid submission did not complete successfully.");
+      throw new Error("Prototype bid submission did not complete successfully.");
     }
 
     const [storedBid, walletEscrow] = await Promise.all([
@@ -259,10 +279,10 @@ export async function placeBidWithWallet({
     ]);
 
     if (storedBid.toLowerCase() !== encryptedBid.toLowerCase()) {
-      throw new Error("The encrypted bid was not stored on chain as expected.");
+      throw new Error("The prototype bid handle was not stored on chain as expected.");
     }
 
-    onProgress?.("Confidential bid stored on chain.");
+    onProgress?.("Local prototype bid handle stored on chain.");
     return {
       encryptedBid,
       txHash,

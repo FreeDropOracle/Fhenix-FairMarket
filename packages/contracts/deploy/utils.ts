@@ -21,6 +21,9 @@ export interface NetworkDescriptor {
   blockExplorerUrl: string;
 }
 
+const LOCAL_NETWORK_NAMES = new Set(["hardhat", "localhost", "anvil"]);
+const LOCAL_CHAIN_IDS = new Set([1337, 31337]);
+
 export function resolveDeploymentPaths(targetNetwork: string = network.name): DeploymentPaths {
   const deploymentDirectory = path.join(__dirname, "..", "deployments");
   return {
@@ -66,6 +69,21 @@ export async function resolveNetworkDescriptor(targetNetwork: string = network.n
     websocketUrl: resolveWebsocketUrl(targetNetwork),
     blockExplorerUrl: resolveBlockExplorerUrl(targetNetwork, numericChainId)
   };
+}
+
+export function assertPrototypeAdapterLocalOnly(descriptor: NetworkDescriptor): void {
+  const isLocalNetwork = LOCAL_NETWORK_NAMES.has(descriptor.name) || LOCAL_CHAIN_IDS.has(descriptor.chainId);
+  if (isLocalNetwork) {
+    return;
+  }
+
+  throw new Error(
+    [
+      `Prototype CofheAdapter deployment is disabled on non-local networks (${descriptor.name}, chainId=${descriptor.chainId}).`,
+      "The current adapter path is reversible placeholder encoding and must not be deployed to public networks.",
+      "Use a production opaque-ciphertext adapter before deploying this stack outside local development."
+    ].join(" ")
+  );
 }
 
 export function resolveRpcUrl(targetNetwork: string): string {

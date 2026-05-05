@@ -167,7 +167,7 @@ export default async function PortfolioPage() {
                     </div>
                     <StatusPill label={getAuctionStatusLabel(auction.state)} tone={getAuctionStatusTone(auction.state)} />
                   </div>
-                  <p className="portfolio-auction-card__copy">{auction.confidentialityLabel}</p>
+                  <p className="portfolio-auction-card__copy">{auction.bidLaneLabel}</p>
                   <div className="portfolio-auction-card__foot">
                     <span>{auction.timeLabel}</span>
                     <strong>{auction.nextActions[0]}</strong>

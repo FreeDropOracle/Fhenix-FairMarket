@@ -522,16 +522,16 @@ function hasCloseWindowEnded(endTime: bigint, nowUnix: number) {
 function getAuctionSynopsis(state: AuctionState, collectionLabel: string) {
   switch (state) {
     case "resolving":
-      return `${collectionLabel} already moved beyond bidding and is now waiting for confidential settlement to complete.`;
+      return `${collectionLabel} already moved beyond bidding and is now waiting for prototype settlement to complete.`;
     case "finalized":
-      return `${collectionLabel} completed its confidential path and is now ready for post-settlement claims.`;
+      return `${collectionLabel} completed its sealed-bid path and is now ready for post-settlement claims.`;
     case "voided":
       return `${collectionLabel} moved into a guarded cancellation path and now exposes refund-oriented actions.`;
     case "cancelled":
       return `${collectionLabel} was cancelled by the seller before close, and the recovery path is now focused on refunds plus seller payout settlement.`;
     case "active":
     default:
-      return `${collectionLabel} is live on Sepolia and can accept escrow plus confidential bidding actions from compatible wallets.`;
+      return `${collectionLabel} is live on Sepolia and can accept escrow plus prototype bidding actions from compatible wallets.`;
   }
 }
 
@@ -575,13 +575,13 @@ function getProtocolSignals(state: AuctionState, bidCount: bigint, hasEnded: boo
       return [
         "The close window is over and the resolution proof is now in-flight.",
         "The public desk hides live escrow magnitudes during sealed-bid settlement.",
-        `${bidCount.toString()} confidential bid lane(s) were recorded before the close window ended.`
+        `${bidCount.toString()} prototype bid lane(s) were recorded before the close window ended.`
       ];
     case "finalized":
       return [
         "The winner and payout path are already fixed on chain.",
         "The public desk stays focused on settlement state instead of exposing private auction sizing.",
-        `${bidCount.toString()} confidential bid lane(s) fed into the final outcome.`
+        `${bidCount.toString()} prototype bid lane(s) fed into the final outcome.`
       ];
     case "voided":
       return [
@@ -605,8 +605,8 @@ function getProtocolSignals(state: AuctionState, bidCount: bigint, hasEnded: boo
           ? "The next safe step is to start settlement from the auction details page."
           : "The public desk intentionally hides live escrow magnitudes for sealed-bid lots.",
         bidCount > 0n
-          ? `${bidCount.toString()} confidential bid lane(s) are already recorded on chain.`
-          : "No on-chain confidential bid has been recorded yet."
+          ? `${bidCount.toString()} prototype bid lane(s) are already recorded on chain.`
+          : "No on-chain prototype bid has been recorded yet."
       ];
   }
 }
@@ -672,7 +672,7 @@ function buildTimeline(
     {
       label: "Bid lanes",
       tone: bidCount > 0n ? ("success" as const) : ("neutral" as const),
-      value: `${bidCount.toString()} confidential lane(s) recorded`
+      value: `${bidCount.toString()} prototype lane(s) recorded`
     }
   ];
 }
@@ -690,10 +690,10 @@ function buildLiveAuctionRecord(
   const state = mapLiveAuctionState(core.state);
   const hasEnded = state === "active" && hasCloseWindowEnded(core.endTime, nowUnix);
   const lotLabel = `Lot #${auctionId} / token ${core.tokenId.toString()}`;
-  const formatLabel = core.isVickrey ? "Vickrey sealed bid" : "Confidential auction";
+  const formatLabel = core.isVickrey ? "Vickrey sealed bid" : "Prototype sealed auction";
   const openingBidLabel =
     startingPrice > 0n
-      ? "Confidential floor configured"
+      ? "Prototype floor configured"
       : state === "active"
         ? "No public opening bid"
         : "Opening price remained private";
@@ -702,10 +702,10 @@ function buildLiveAuctionRecord(
       ? hasEnded
         ? "Close window reached. Settlement can start now."
         : phase2.bidCount > 0n
-          ? "Confidential participation recorded"
+          ? "Prototype participation recorded"
           : "No public bidder activity"
       : state === "resolving"
-        ? "Confidential settlement in progress"
+        ? "Prototype settlement in progress"
         : state === "finalized"
           ? "Settlement complete"
           : state === "cancelled"
@@ -728,12 +728,12 @@ function buildLiveAuctionRecord(
     activityScore: Number(phase2.bidCount),
     artwork,
     collection: collectionName,
-    confidentialityLabel:
+    bidLaneLabel:
       state === "active" && hasEnded
         ? "Closed"
         : core.isVickrey
-          ? "Encrypted Vickrey lane active"
-          : "Confidential bidding lane active",
+          ? "Prototype Vickrey lane active"
+          : "Prototype bidding lane active",
     escrowLabel: publicEscrowLabel,
     escrowScore: Number.parseFloat(formatEther(core.sellerDeposit + phase2.totalEscrow)),
     formatLabel,

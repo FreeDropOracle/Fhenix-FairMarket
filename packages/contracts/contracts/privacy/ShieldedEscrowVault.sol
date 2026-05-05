@@ -458,29 +458,6 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
         _usedClaimAuthorizations[authorizationDigest] = true;
     }
 
-    function _assertClaimAuthorityProof(
-        bytes32 claimTag,
-        bytes32 commitmentHash,
-        uint256 auctionId,
-        bytes32 payloadHash,
-        uint256 deadline,
-        bytes calldata signature
-    ) internal view {
-        if (block.timestamp > deadline) {
-            revert ClaimAuthorizationExpired(deadline, block.timestamp);
-        }
-
-        CommitmentDeposit storage commitment = _requireRegisteredCommitment(commitmentHash);
-        address claimAuthority = commitment.claimAuthority;
-        bytes32 authorizationDigest =
-            keccak256(abi.encode(claimTag, block.chainid, address(this), auctionId, commitmentHash, payloadHash, deadline))
-                .toEthSignedMessageHash();
-        address recoveredAuthority = authorizationDigest.recover(signature);
-        if (recoveredAuthority != claimAuthority) {
-            revert InvalidClaimAuthority(commitmentHash, claimAuthority, recoveredAuthority);
-        }
-    }
-
     function _requireRegisteredCommitment(bytes32 commitmentHash) internal view returns (CommitmentDeposit storage commitment) {
         commitment = _commitments[commitmentHash];
         if (commitment.auctionId == 0) {

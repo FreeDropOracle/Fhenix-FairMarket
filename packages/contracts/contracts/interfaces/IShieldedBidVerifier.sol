@@ -7,6 +7,7 @@ interface IShieldedBidVerifier {
         uint256 auctionId,
         bytes32 commitmentHash,
         bytes32 encryptedBid,
+        uint256 committedAmount,
         uint256 deadline,
         bytes calldata proof
     ) external view returns (bool);

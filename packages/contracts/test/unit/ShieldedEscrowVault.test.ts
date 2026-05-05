@@ -71,13 +71,14 @@ async function signVerifierCoverage(
   auctionId: bigint,
   commitmentHash: string,
   encryptedBid: string,
+  committedAmount: bigint,
   deadline: bigint,
   prover: ethers.Wallet
 ) {
   const digest = ethers.keccak256(
     ethers.AbiCoder.defaultAbiCoder().encode(
-      ["address", "uint256", "address", "uint256", "bytes32", "bytes32", "uint256"],
-      [verifierAddress, 31337n, vaultAddress, auctionId, commitmentHash, encryptedBid, deadline]
+      ["address", "uint256", "address", "uint256", "bytes32", "bytes32", "uint256", "uint256"],
+      [verifierAddress, 31337n, vaultAddress, auctionId, commitmentHash, encryptedBid, committedAmount, deadline]
     )
   );
 
@@ -352,7 +353,7 @@ describe("ShieldedEscrowVault Privacy Phase 1", function () {
     expect(await vault.connect(owner).verifyPlaintextBidCoverage(note.commitment, ethers.parseEther("2"))).to.equal(false);
   });
 
-  it("accepts proof-carried shielded bid coverage without revealing the note amount in the call", async function () {
+  it("rejects legacy claim-authority bid coverage proofs when no verifier is configured", async function () {
     const { adapter, bidder, market, outsider, vault } = await loadFixture(createShieldedFixture);
     const note = buildShieldedNote("proof-carried-6");
 
@@ -373,23 +374,9 @@ describe("ShieldedEscrowVault Privacy Phase 1", function () {
       note.claimAuthority
     );
 
-    await expect(vault.connect(outsider).verifyBidCoverageProof(note.commitment, encryptedBid, deadline, proof)).to.not.be
-      .reverted;
     await expect(
-      vault.connect(outsider).verifyBidCoverageProof(
-        note.commitment,
-        encryptedBid,
-        deadline,
-        await signBidCoverage(
-          await vault.getAddress(),
-          1n,
-          note.commitment,
-          encryptedBid,
-          deadline,
-          ethers.Wallet.createRandom()
-        )
-      )
-    ).to.be.revertedWithCustomError(vault, "InvalidClaimAuthority");
+      vault.connect(outsider).verifyBidCoverageProof(note.commitment, encryptedBid, deadline, proof)
+    ).to.be.revertedWithCustomError(vault, "InvalidShieldedBidProof");
   });
 
   it("can route shielded bid proofs through an external verifier boundary", async function () {
@@ -409,6 +396,7 @@ describe("ShieldedEscrowVault Privacy Phase 1", function () {
       });
 
     const encryptedBid = await adapter.asEuint96(ethers.parseEther("0.75"));
+    const committedAmount = ethers.parseEther("1");
     const deadline = BigInt((await time.latest()) + 3600);
     const verifierProof = await signVerifierCoverage(
       await verifier.getAddress(),
@@ -416,6 +404,7 @@ describe("ShieldedEscrowVault Privacy Phase 1", function () {
       1n,
       note.commitment,
       encryptedBid,
+      committedAmount,
       deadline,
       prover
     );
@@ -433,10 +422,43 @@ describe("ShieldedEscrowVault Privacy Phase 1", function () {
           1n,
           note.commitment,
           encryptedBid,
+          committedAmount,
           deadline,
           ethers.Wallet.createRandom()
         )
       )
-    ).to.be.revertedWithCustomError(verifier, "InvalidProver");
+    ).to.be.revertedWithCustomError(vault, "InvalidShieldedBidProof");
+  });
+
+  it("rejects verifier proofs when the encrypted bid exceeds committed escrow", async function () {
+    const { adapter, bidder, market, outsider, owner, vault } = await loadFixture(createShieldedFixture);
+    const note = buildShieldedNote("verifier-undercovered-8");
+    const prover = ethers.Wallet.createRandom();
+
+    const verifierFactory = await ethers.getContractFactory("MockShieldedBidVerifier");
+    const verifier = await verifierFactory.deploy(owner.address, prover.address);
+    await verifier.waitForDeployment();
+    await vault.connect(owner).setShieldedBidVerifier(await verifier.getAddress());
+
+    await market.connect(bidder).lockShieldedEscrow(1n, note.identityHash, note.commitment, note.claimAuthority.address, {
+      value: 1n
+    });
+
+    const encryptedBid = await adapter.asEuint96(450n);
+    const deadline = BigInt((await time.latest()) + 3600);
+    const verifierProof = await signVerifierCoverage(
+      await verifier.getAddress(),
+      await vault.getAddress(),
+      1n,
+      note.commitment,
+      encryptedBid,
+      1n,
+      deadline,
+      prover
+    );
+
+    await expect(
+      vault.connect(outsider).verifyBidCoverageProof(note.commitment, encryptedBid, deadline, verifierProof)
+    ).to.be.revertedWithCustomError(vault, "InvalidShieldedBidProof");
   });
 });

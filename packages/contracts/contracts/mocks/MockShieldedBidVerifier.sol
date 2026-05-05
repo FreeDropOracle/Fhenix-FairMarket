@@ -6,12 +6,13 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import "../interfaces/IShieldedBidVerifier.sol";
+import "../utils/CofheCiphertextEncoding.sol";
 
 contract MockShieldedBidVerifier is Ownable, IShieldedBidVerifier {
     using ECDSA for bytes32;
+    using CofheCiphertextEncoding for bytes32;
     using MessageHashUtils for bytes32;
 
-    error InvalidProver(address prover);
     error ZeroAddress();
 
     address public prover;
@@ -42,6 +43,7 @@ contract MockShieldedBidVerifier is Ownable, IShieldedBidVerifier {
         uint256 auctionId,
         bytes32 commitmentHash,
         bytes32 encryptedBid,
+        uint256 committedAmount,
         uint256 deadline,
         bytes calldata proof
     ) external view override returns (bool) {
@@ -49,14 +51,15 @@ contract MockShieldedBidVerifier is Ownable, IShieldedBidVerifier {
             revert ZeroAddress();
         }
 
-        bytes32 digest =
-            keccak256(abi.encode(address(this), block.chainid, vault, auctionId, commitmentHash, encryptedBid, deadline))
-                .toEthSignedMessageHash();
-        address recoveredProver = digest.recover(proof);
-        if (recoveredProver != prover) {
-            revert InvalidProver(recoveredProver);
+        if (encryptedBid.decodeNumeric() > committedAmount) {
+            return false;
         }
 
-        return true;
+        bytes32 digest = keccak256(
+            abi.encode(address(this), block.chainid, vault, auctionId, commitmentHash, encryptedBid, committedAmount, deadline)
+        ).toEthSignedMessageHash();
+        address recoveredProver = digest.recover(proof);
+
+        return recoveredProver == prover;
     }
 }

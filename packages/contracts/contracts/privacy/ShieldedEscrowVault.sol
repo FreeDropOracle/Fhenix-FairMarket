@@ -23,7 +23,6 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
     }
 
     bytes32 private constant _ASSET_CLAIM_TAG = keccak256("FFM_SHIELDED_ASSET_CLAIM");
-    bytes32 private constant _BID_COVERAGE_TAG = keccak256("FFM_SHIELDED_BID_COVERAGE");
     bytes32 private constant _REFUND_CLAIM_TAG = keccak256("FFM_SHIELDED_REFUND_CLAIM");
     bytes32 private constant _REFUND_COMPENSATION_TAG = keccak256("FFM_SHIELDED_REFUND_COMPENSATION");
 
@@ -338,29 +337,22 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
         }
 
         address verifier = shieldedBidVerifier;
-        if (verifier != address(0)) {
-            bool valid = IShieldedBidVerifier(verifier).verifyBidCoverage(
-                address(this),
-                commitment.auctionId,
-                commitmentHash,
-                encryptedBid,
-                deadline,
-                signature
-            );
-            if (!valid) {
-                revert InvalidShieldedBidProof(commitmentHash, verifier);
-            }
-            return;
+        if (verifier == address(0)) {
+            revert InvalidShieldedBidProof(commitmentHash, address(0));
         }
 
-        _assertClaimAuthorityProof(
-            _BID_COVERAGE_TAG,
-            commitmentHash,
+        bool valid = IShieldedBidVerifier(verifier).verifyBidCoverage(
+            address(this),
             commitment.auctionId,
-            keccak256(abi.encode(encryptedBid)),
+            commitmentHash,
+            encryptedBid,
+            commitment.amount,
             deadline,
             signature
         );
+        if (!valid) {
+            revert InvalidShieldedBidProof(commitmentHash, verifier);
+        }
     }
 
     function verifyPlaintextBidCoverage(bytes32 commitmentHash, uint256 bidAmount)

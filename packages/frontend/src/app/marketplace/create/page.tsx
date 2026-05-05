@@ -9,7 +9,7 @@ export default function CreateAuctionPage() {
       <section className="section-block create-hero">
         <div>
           <p className="eyebrow">Create auction</p>
-          <h1 className="section-title">Create a confidential lot in four calm steps.</h1>
+          <h1 className="section-title">Create a sealed-bid prototype lot in four calm steps.</h1>
           <p className="section-note create-hero__copy">
             Start with the NFT, choose the duration, confirm the seller deposit, then review the transaction before it
             moves on chain.

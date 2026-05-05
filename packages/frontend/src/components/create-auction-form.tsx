@@ -173,7 +173,7 @@ function getWalletStatus(wallet: ReturnType<typeof useWallet>, marketReady: bool
 }
 
 function getFormatLabel(format: CreateAuctionFormState["format"]) {
-  return format === "vickrey" ? "Vickrey sealed bid" : "Confidential auction";
+  return format === "vickrey" ? "Vickrey sealed bid" : "Prototype sealed auction";
 }
 
 export function CreateAuctionForm() {
@@ -447,7 +447,7 @@ export function CreateAuctionForm() {
                 value={form.format}
               >
                 <option value="vickrey">Vickrey sealed bid</option>
-                <option value="standard">Confidential auction</option>
+                <option value="standard">Prototype sealed auction</option>
               </select>
             </label>
           </div>

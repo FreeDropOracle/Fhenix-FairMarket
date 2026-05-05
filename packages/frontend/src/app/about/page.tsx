@@ -47,7 +47,7 @@ const trustLinks = [
     label: "Compatibility",
     title: "Check the coprocessor reference",
     href: appConfig.coprocessor.referenceUrl,
-    body: "The Fhenix compatibility reference explains the CoFHE context surrounding the confidential settlement path."
+    body: "The Fhenix compatibility reference explains the CoFHE context surrounding the prototype settlement path."
   }
 ] as const;
 
@@ -57,7 +57,7 @@ export default function AboutPage() {
       <section className="about-hero">
         <div className="about-hero__copy">
           <p className="eyebrow">About</p>
-          <h1 className="section-title">Confidential auctions, explained without the noise.</h1>
+          <h1 className="section-title">Sealed-bid prototypes, explained without the noise.</h1>
           <p className="section-note about-hero__note">
             Fhenix-FairMarket is a privacy-first auction desk designed to feel calm, legible, and trustworthy even
             when the underlying protocol path is complex.
@@ -174,7 +174,7 @@ export default function AboutPage() {
 
           <details className="about-accordion">
             <summary>
-              <span>Confidential settlement context</span>
+              <span>Prototype settlement context</span>
               <span className="signal-label">Reference</span>
             </summary>
             <div className="about-accordion__body">

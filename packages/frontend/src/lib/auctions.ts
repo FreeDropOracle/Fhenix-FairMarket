@@ -11,7 +11,7 @@ export type AuctionRecord = {
   lotLabel: string;
   state: AuctionState;
   formatLabel: string;
-  confidentialityLabel: string;
+  bidLaneLabel: string;
   seller: string;
   sellerTag: string;
   openingBidAmount: number;
@@ -102,7 +102,7 @@ const auctionSeed: AuctionRecord[] = [
     lotLabel: "Lot 091 / sealed opening",
     state: "active",
     formatLabel: "Sealed bid",
-    confidentialityLabel: "Encrypted bid lane open",
+    bidLaneLabel: "Prototype bid lane open",
     seller: "0x8A4d...72C1",
     sellerTag: "Treasury curator",
     openingBidAmount: 3.2,
@@ -110,7 +110,7 @@ const auctionSeed: AuctionRecord[] = [
     escrowLabel: "11.80 ETH escrow locked",
     timeLabel: "03h 41m left",
     synopsis:
-      "A high-interest vault relic prepared for confidential bidding with clear terms and strong seller coverage.",
+      "A high-interest vault relic prepared for prototype sealed bidding with clear terms and strong seller coverage.",
     settlementNote: "Settlement begins as soon as the bidding window closes.",
     visual: {
       halo: "rgba(141, 107, 255, 0.72)",
@@ -123,7 +123,7 @@ const auctionSeed: AuctionRecord[] = [
       { label: "Participants", value: "07 active" },
       { label: "Settlement", value: "Protected close" }
     ],
-    nextActions: ["Lock escrow", "Place confidential bid", "Review lot details"],
+    nextActions: ["Lock escrow", "Place prototype bid", "Review lot details"],
     timeline: [
       { label: "Asset intake", value: "NFT custody verified", tone: "success" },
       { label: "Auction state", value: "Open for encrypted bids", tone: "success" },
@@ -142,10 +142,10 @@ const auctionSeed: AuctionRecord[] = [
     id: "helios-index-144",
     title: "Helios Index",
     collection: "Quant Frames",
-    lotLabel: "Lot 144 / confidential treasury release",
+    lotLabel: "Lot 144 / sealed-bid prototype release",
     state: "active",
     formatLabel: "Sealed bid",
-    confidentialityLabel: "Bid lane gated by escrow",
+    bidLaneLabel: "Bid lane gated by escrow",
     seller: "0xB163...D8A0",
     sellerTag: "Protocol partner",
     openingBidAmount: 2.45,
@@ -166,7 +166,7 @@ const auctionSeed: AuctionRecord[] = [
       { label: "Participants", value: "05 active" },
       { label: "Settlement", value: "Keeper tracked" }
     ],
-    nextActions: ["Add more escrow", "Place confidential bid", "Wait for settlement"],
+    nextActions: ["Add more escrow", "Place prototype bid", "Wait for settlement"],
     timeline: [
       { label: "Asset intake", value: "Metadata synced", tone: "success" },
       { label: "Auction state", value: "Accepting encrypted bids", tone: "success" },
@@ -188,7 +188,7 @@ const auctionSeed: AuctionRecord[] = [
     lotLabel: "Lot 208 / resolving sequence",
     state: "resolving",
     formatLabel: "Asynchronous settlement",
-    confidentialityLabel: "Decryption request in-flight",
+    bidLaneLabel: "Decryption request in-flight",
     seller: "0x71b0...A4C5",
     sellerTag: "Independent seller",
     openingBidAmount: 1.9,
@@ -196,7 +196,7 @@ const auctionSeed: AuctionRecord[] = [
     escrowLabel: "6.42 ETH escrow locked",
     timeLabel: "Keeper resolving now",
     synopsis:
-      "The bid window has closed and the lot is now moving through confidential settlement.",
+      "The bid window has closed and the lot is now moving through prototype settlement.",
     settlementNote: "Refunds and seller proceeds stay locked until the proof comes back.",
     visual: {
       halo: "rgba(101, 255, 207, 0.64)",
@@ -217,7 +217,7 @@ const auctionSeed: AuctionRecord[] = [
     ],
     protocolSignals: [
       "Finalization request already recorded on-chain.",
-      "Winner selection remains confidential until settlement completes.",
+      "Winner selection remains sealed until settlement completes.",
       "Keeper reward becomes claimable after completion."
     ],
     activityScore: 9,
@@ -230,8 +230,8 @@ const auctionSeed: AuctionRecord[] = [
     collection: "Oracle Geometry",
     lotLabel: "Lot 313 / final settlement complete",
     state: "finalized",
-    formatLabel: "Confidential close complete",
-    confidentialityLabel: "Winner committed",
+    formatLabel: "Sealed-bid close complete",
+    bidLaneLabel: "Winner committed",
     seller: "0xD912...331F",
     sellerTag: "Verified seller",
     openingBidAmount: 4.1,
@@ -274,7 +274,7 @@ const auctionSeed: AuctionRecord[] = [
     lotLabel: "Lot 402 / guarded rollback",
     state: "voided",
     formatLabel: "Fallback void",
-    confidentialityLabel: "No winner committed",
+    bidLaneLabel: "No winner committed",
     seller: "0xA4F1...9907",
     sellerTag: "Seller under fallback review",
     openingBidAmount: 2.1,
@@ -317,7 +317,7 @@ const auctionSeed: AuctionRecord[] = [
     lotLabel: "Lot 119 / active competitive desk",
     state: "active",
     formatLabel: "Sealed bid",
-    confidentialityLabel: "Escrow threshold satisfied",
+    bidLaneLabel: "Escrow threshold satisfied",
     seller: "0x4340...AB12",
     sellerTag: "Archive steward",
     openingBidAmount: 5.6,
@@ -338,7 +338,7 @@ const auctionSeed: AuctionRecord[] = [
       { label: "Participants", value: "11 active" },
       { label: "Settlement", value: "Priority close" }
     ],
-    nextActions: ["Place confidential bid", "Track close window", "Review auction details"],
+    nextActions: ["Place prototype bid", "Track close window", "Review auction details"],
     timeline: [
       { label: "Asset intake", value: "Ready", tone: "success" },
       { label: "Auction state", value: "High-traffic active desk", tone: "success" },
@@ -421,12 +421,12 @@ export function getAuctionStatusLabel(state: AuctionState) {
 
 export function getMarketplaceStats(records: AuctionRecord[]) {
   const activeCount = records.filter((auction) => auction.state === "active").length;
-  const confidentialCount = records.filter((auction) => auction.onChain).length;
+  const prototypeCount = records.filter((auction) => auction.onChain).length;
   const resolvingCount = records.filter((auction) => auction.state === "resolving").length;
 
   return [
     {
-      label: "Confidential lots",
+      label: "Prototype lots",
       value: `${records.length} listed`,
       note: "Curated across the current Sepolia desk."
     },
@@ -442,7 +442,7 @@ export function getMarketplaceStats(records: AuctionRecord[]) {
     },
     {
       label: "Live actions",
-      value: `${activeCount} active / ${confidentialCount} confidential`,
+      value: `${activeCount} active / ${prototypeCount} prototype`,
       note: "Only settlement state and route readiness stay visible on the public desk."
     }
   ] as const;
@@ -545,7 +545,7 @@ export function getUserOperations(): UserOperationRecord {
         id: "activity-001",
         timestamp: "2m ago",
         title: "Escrow staged for Sable Atlas",
-        detail: "You opened a 1.20 ETH local escrow lane before confidential bid submission.",
+        detail: "You opened a 1.20 ETH local escrow lane before prototype bid submission.",
         tone: "success"
       },
       {

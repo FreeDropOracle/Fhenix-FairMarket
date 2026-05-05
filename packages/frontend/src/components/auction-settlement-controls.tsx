@@ -95,7 +95,7 @@ export function AuctionSettlementControls({
     if (effectiveState === "active" && closeWindowReached) {
       return onChain.bidCount > 0
         ? "The bidding window is over. Start settlement now so the keeper and AVS path can resolve the winner."
-        : "The bidding window is over, but no on-chain confidential bid was recorded. Start settlement to finalize the no-winner branch and let the seller reclaim the NFT.";
+        : "The bidding window is over, but no on-chain prototype bid was recorded. Start settlement to finalize the no-winner branch and let the seller reclaim the NFT.";
     }
 
     if (effectiveState === "resolving") {

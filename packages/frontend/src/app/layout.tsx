@@ -25,7 +25,7 @@ const dataMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Fhenix-FairMarket App",
-  description: "Confidential sealed-bid auctions with a premium Sepolia-first experience."
+  description: "Sealed-bid auction prototype with a premium Sepolia-first experience."
 };
 
 export const viewport: Viewport = {

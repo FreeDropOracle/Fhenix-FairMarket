@@ -20,7 +20,7 @@ export function MarketplaceGridClient({ auctions }: MarketplaceGridClientProps) 
           <StatusPill label="No lots in this slice" tone="warning" />
           <h2 className="placeholder-title">This desk is quiet right now.</h2>
           <p className="placeholder-copy">
-            Change the filter or create a new confidential auction to see more activity here.
+            Change the filter or create a new sealed-bid prototype auction to see more activity here.
           </p>
           <div className="hero-actions">
             <Link className="secondary-action" href="/marketplace">

@@ -76,7 +76,7 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
             </article>
             <article className="detail-hero__summary-card">
               <span>Privacy</span>
-              <strong>{auction.confidentialityLabel}</strong>
+              <strong>{auction.bidLaneLabel}</strong>
             </article>
           </div>
           <p className="detail-callout">{auction.settlementNote}</p>
@@ -105,7 +105,7 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
         auctionId={auction.id}
         auctionState={auction.state}
         auctionTitle={auction.title}
-        confidentialityLabel={auction.confidentialityLabel}
+        bidLaneLabel={auction.bidLaneLabel}
         escrowLabel={auction.escrowLabel}
         onChain={auction.onChain}
         openingBidAmount={auction.openingBidAmount}
@@ -145,8 +145,8 @@ export default async function AuctionDetailsPage({ params }: AuctionDetailsPageP
               </p>
             </div>
             <div>
-              <span className="detail-label">Confidentiality</span>
-              <h2 className="detail-card__value">{auction.confidentialityLabel}</h2>
+              <span className="detail-label">Prototype bid lane</span>
+              <h2 className="detail-card__value">{auction.bidLaneLabel}</h2>
               <p className="detail-copy detail-card__copy">{auction.formatLabel}</p>
             </div>
           </div>

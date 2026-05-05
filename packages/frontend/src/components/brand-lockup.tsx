@@ -35,7 +35,7 @@ export function BrandLockup() {
       </div>
       <div className="brand-footnote">
         <div>
-          <strong>Confidential flow</strong>
+          <strong>Prototype flow</strong>
           Escrow first. Sealed bids next.
         </div>
         <div>

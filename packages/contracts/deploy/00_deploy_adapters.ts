@@ -1,10 +1,18 @@
 import { ethers, network } from "hardhat";
 
-import { ensureDirectory, readDeploymentFile, resolveDeploymentPaths, resolveNetworkDescriptor, writeJsonFile } from "./utils";
+import {
+  assertPrototypeAdapterLocalOnly,
+  ensureDirectory,
+  readDeploymentFile,
+  resolveDeploymentPaths,
+  resolveNetworkDescriptor,
+  writeJsonFile
+} from "./utils";
 
 async function main() {
   const { deploymentDirectory, deploymentFile } = resolveDeploymentPaths(network.name);
   const descriptor = await resolveNetworkDescriptor(network.name);
+  assertPrototypeAdapterLocalOnly(descriptor);
   await ensureDirectory(deploymentDirectory);
   const [defaultSigner] = await ethers.getSigners();
   const initialOwner = process.env.PHASE1_INITIAL_OWNER || defaultSigner.address;

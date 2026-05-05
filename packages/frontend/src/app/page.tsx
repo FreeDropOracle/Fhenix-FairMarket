@@ -6,7 +6,7 @@ const routeCards = [
   {
     href: "/marketplace",
     kicker: "Marketplace",
-    title: "Confidential auctions",
+    title: "Sealed-bid prototype auctions",
     description: "Browse active lots, inspect each auction clearly, and move toward escrow or bidding from one place.",
     badge: "Open now"
   },
@@ -31,13 +31,13 @@ export default function HomePage() {
     <main className="page-grid">
       <section className="hero-panel">
         <div className="hero-copy">
-          <p className="eyebrow">Sepolia-First Confidential Auction Application</p>
+          <p className="eyebrow">Sepolia-First Sealed-Bid Prototype</p>
           <div className="hero-headline">
             <h1 className="hero-title">Math-Based Integrity, operationalized.</h1>
             <HeroCrest />
           </div>
           <p className="hero-summary">
-            Browse confidential auctions, manage claims, and move through each step with a calmer interface that
+            Browse sealed-bid prototype auctions, manage claims, and move through each step with a calmer interface that
             stays focused on the action in front of you.
           </p>
           <div className="hero-actions">

@@ -4,8 +4,6 @@ import { AuctionMonitor } from "../../../keeper/services/auctionMonitor";
 import { AvsSubmitter } from "../../../keeper/services/avsSubmitter";
 import { CofheDispatcher, type EncryptedBidRecord } from "../../../keeper/services/cofheDispatcher";
 
-const MAX_SHIELDED_ESCROW = (1n << 96n) - 1n;
-
 export async function collectEncryptedBids(
   market: {
     getBidders(auctionId: bigint): Promise<readonly string[]>;
@@ -35,6 +33,7 @@ export async function collectShieldedEncryptedBids(
   },
   vault: {
     commitmentState(commitmentHash: string): Promise<readonly [bigint, boolean, boolean]>;
+    previewCommitment(commitmentHash: string): Promise<readonly [bigint, bigint, boolean, boolean]>;
   },
   registry: {
     identityForCommitment(auctionId: bigint, commitmentHash: string): Promise<string>;
@@ -49,11 +48,12 @@ export async function collectShieldedEncryptedBids(
     if (commitmentAuctionId !== auctionId || refundUnlocked || claimed) {
       continue;
     }
+    const [, availableEscrow] = await vault.previewCommitment(commitmentHash);
     const identityHash = registry ? await registry.identityForCommitment(auctionId, commitmentHash) : ZeroHash;
     bids.push({
       bidder: identityHash === ZeroHash ? commitmentHash : identityHash,
       encryptedBid: await market.getShieldedEncryptedBid(auctionId, commitmentHash),
-      availableEscrow: MAX_SHIELDED_ESCROW,
+      availableEscrow,
       isShielded: true
     });
   }
@@ -71,6 +71,7 @@ export async function collectAllEncryptedBids(
   },
   vault: {
     commitmentState(commitmentHash: string): Promise<readonly [bigint, boolean, boolean]>;
+    previewCommitment(commitmentHash: string): Promise<readonly [bigint, bigint, boolean, boolean]>;
   },
   registry: {
     identityForCommitment(auctionId: bigint, commitmentHash: string): Promise<string>;

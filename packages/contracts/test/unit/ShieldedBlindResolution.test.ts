@@ -8,6 +8,7 @@ import { buildShieldedResolutionProof, collectAllEncryptedBids } from "../helper
 async function createShieldedBlindFixture() {
   const context = await createPhase2AuctionFixture();
   const { market, owner } = context;
+  const shieldedBidProver = ethers.Wallet.createRandom();
 
   const vaultFactory = await ethers.getContractFactory("ShieldedEscrowVault");
   const vault = await vaultFactory.deploy(owner.address);
@@ -17,8 +18,13 @@ async function createShieldedBlindFixture() {
   const registry = await registryFactory.deploy(owner.address);
   await registry.waitForDeployment();
 
+  const shieldedBidVerifierFactory = await ethers.getContractFactory("MockShieldedBidVerifier");
+  const shieldedBidVerifier = await shieldedBidVerifierFactory.deploy(owner.address, shieldedBidProver.address);
+  await shieldedBidVerifier.waitForDeployment();
+
   await vault.connect(owner).setMarket(await market.getAddress());
   await vault.connect(owner).setPreviewReader(owner.address);
+  await vault.connect(owner).setShieldedBidVerifier(await shieldedBidVerifier.getAddress());
   await registry.connect(owner).setMarket(await market.getAddress());
   await market.connect(owner).setShieldedEscrowVault(await vault.getAddress());
   await market.connect(owner).setShieldedIdentityRegistry(await registry.getAddress());
@@ -26,7 +32,9 @@ async function createShieldedBlindFixture() {
   return {
     ...context,
     vault,
-    registry
+    registry,
+    shieldedBidProver,
+    shieldedBidVerifier
   };
 }
 
@@ -82,45 +90,20 @@ async function signRefundClaim(
   return claimAuthority.signMessage(ethers.getBytes(digest));
 }
 
-async function signBidCoverage(
-  vaultAddress: string,
-  auctionId: bigint,
-  commitmentHash: string,
-  encryptedBid: string,
-  deadline: bigint,
-  claimAuthority: ethers.Wallet
-) {
-  const digest = ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ["bytes32", "uint256", "address", "uint256", "bytes32", "bytes32", "uint256"],
-      [
-        ethers.id("FFM_SHIELDED_BID_COVERAGE"),
-        31337n,
-        vaultAddress,
-        auctionId,
-        commitmentHash,
-        ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["bytes32"], [encryptedBid])),
-        deadline
-      ]
-    )
-  );
-
-  return claimAuthority.signMessage(ethers.getBytes(digest));
-}
-
 async function signVerifierCoverage(
   verifierAddress: string,
   vaultAddress: string,
   auctionId: bigint,
   commitmentHash: string,
   encryptedBid: string,
+  committedAmount: bigint,
   deadline: bigint,
   prover: ethers.Wallet
 ) {
   const digest = ethers.keccak256(
     ethers.AbiCoder.defaultAbiCoder().encode(
-      ["address", "uint256", "address", "uint256", "bytes32", "bytes32", "uint256"],
-      [verifierAddress, 31337n, vaultAddress, auctionId, commitmentHash, encryptedBid, deadline]
+      ["address", "uint256", "address", "uint256", "bytes32", "bytes32", "uint256", "uint256"],
+      [verifierAddress, 31337n, vaultAddress, auctionId, commitmentHash, encryptedBid, committedAmount, deadline]
     )
   );
 
@@ -129,22 +112,26 @@ async function signVerifierCoverage(
 
 describe("Privacy Phase 2 blind resolution", function () {
   it("stores shielded bids by commitment without polluting the public bidder registry", async function () {
-    const { adapter, bidder, market, registry, vault } = await loadFixture(createShieldedBlindFixture);
+    const { adapter, bidder, market, registry, shieldedBidProver, shieldedBidVerifier, vault } =
+      await loadFixture(createShieldedBlindFixture);
     const note = buildCommitment("shielded-bidder-one");
+    const committedAmount = 600n;
 
     await market
       .connect(bidder)
-      .lockShieldedEscrow(1n, note.identityHash, note.commitmentHash, note.claimAuthority.address, { value: 600n });
+      .lockShieldedEscrow(1n, note.identityHash, note.commitmentHash, note.claimAuthority.address, { value: committedAmount });
 
     const bidHandle = await adapter.asEuint96(450n);
     const deadline = BigInt((await time.latest()) + 3600);
-    const coverageProof = await signBidCoverage(
+    const coverageProof = await signVerifierCoverage(
+      await shieldedBidVerifier.getAddress(),
       await vault.getAddress(),
       1n,
       note.commitmentHash,
       bidHandle,
+      committedAmount,
       deadline,
-      note.claimAuthority
+      shieldedBidProver
     );
     await expect(market.connect(bidder).placeShieldedBid(1n, note.commitmentHash, bidHandle, deadline, coverageProof))
       .to.emit(market, "ShieldedBidPlaced")
@@ -168,27 +155,59 @@ describe("Privacy Phase 2 blind resolution", function () {
   });
 
   it("rejects shielded bids that do not carry a valid balance proof", async function () {
-    const { adapter, bidder, market, seller, vault } = await loadFixture(createShieldedBlindFixture);
+    const { adapter, bidder, market, seller, shieldedBidVerifier, vault } = await loadFixture(createShieldedBlindFixture);
     const note = buildCommitment("shielded-proof-reject");
+    const committedAmount = 600n;
 
     await market
       .connect(bidder)
-      .lockShieldedEscrow(1n, note.identityHash, note.commitmentHash, note.claimAuthority.address, { value: 600n });
+      .lockShieldedEscrow(1n, note.identityHash, note.commitmentHash, note.claimAuthority.address, { value: committedAmount });
 
     const bidHandle = await adapter.asEuint96(450n);
     const deadline = BigInt((await time.latest()) + 3600);
-    const forgedProof = await signBidCoverage(
+    const forgedProof = await signVerifierCoverage(
+      await shieldedBidVerifier.getAddress(),
       await vault.getAddress(),
       1n,
       note.commitmentHash,
       bidHandle,
+      committedAmount,
       deadline,
       ethers.Wallet.createRandom()
     );
 
     await expect(
       market.connect(seller).placeShieldedBid(1n, note.commitmentHash, bidHandle, deadline, forgedProof)
-    ).to.be.revertedWithCustomError(vault, "InvalidClaimAuthority");
+    ).to.be.revertedWithCustomError(vault, "InvalidShieldedBidProof");
+  });
+
+  it("rejects uncovered shielded bids before they enter the auction book", async function () {
+    const { adapter, bidder, market, shieldedBidProver, shieldedBidVerifier, vault } =
+      await loadFixture(createShieldedBlindFixture);
+    const note = buildCommitment("shielded-undercovered-reject");
+    const committedAmount = 1n;
+
+    await market
+      .connect(bidder)
+      .lockShieldedEscrow(1n, note.identityHash, note.commitmentHash, note.claimAuthority.address, { value: committedAmount });
+
+    const bidHandle = await adapter.asEuint96(450n);
+    const deadline = BigInt((await time.latest()) + 3600);
+    const coverageProof = await signVerifierCoverage(
+      await shieldedBidVerifier.getAddress(),
+      await vault.getAddress(),
+      1n,
+      note.commitmentHash,
+      bidHandle,
+      committedAmount,
+      deadline,
+      shieldedBidProver
+    );
+
+    await expect(
+      market.connect(bidder).placeShieldedBid(1n, note.commitmentHash, bidHandle, deadline, coverageProof)
+    ).to.be.revertedWithCustomError(vault, "InvalidShieldedBidProof");
+    expect(await market.getShieldedEncryptedBid(1n, note.commitmentHash)).to.equal(ethers.ZeroHash);
   });
 
   it("accepts shielded bid proofs from an external verifier boundary when configured", async function () {
@@ -206,6 +225,7 @@ describe("Privacy Phase 2 blind resolution", function () {
       .lockShieldedEscrow(1n, note.identityHash, note.commitmentHash, note.claimAuthority.address, { value: 600n });
 
     const bidHandle = await adapter.asEuint96(450n);
+    const committedAmount = 600n;
     const deadline = BigInt((await time.latest()) + 3600);
     const verifierProof = await signVerifierCoverage(
       await verifier.getAddress(),
@@ -213,6 +233,7 @@ describe("Privacy Phase 2 blind resolution", function () {
       1n,
       note.commitmentHash,
       bidHandle,
+      committedAmount,
       deadline,
       prover
     );
@@ -223,8 +244,23 @@ describe("Privacy Phase 2 blind resolution", function () {
   });
 
   it("finalizes a shielded winner, routes only the winning amount into seller payout, and defers NFT reveal until claim", async function () {
-    const { adapter, avs, avsOperatorOne, avsOperatorTwo, bidder, bidderTwo, market, nft, outsider, owner, registry, seller, vault } =
-      await loadFixture(createShieldedBlindFixture);
+    const {
+      adapter,
+      avs,
+      avsOperatorOne,
+      avsOperatorTwo,
+      bidder,
+      bidderTwo,
+      market,
+      nft,
+      outsider,
+      owner,
+      registry,
+      seller,
+      shieldedBidProver,
+      shieldedBidVerifier,
+      vault
+    } = await loadFixture(createShieldedBlindFixture);
 
     const winnerNote = buildCommitment("winner");
     const loserNote = buildCommitment("loser");
@@ -245,21 +281,25 @@ describe("Privacy Phase 2 blind resolution", function () {
       });
 
     const bidDeadline = BigInt((await time.latest()) + 3600);
-    const winnerCoverageProof = await signBidCoverage(
+    const winnerCoverageProof = await signVerifierCoverage(
+      await shieldedBidVerifier.getAddress(),
       await vault.getAddress(),
       1n,
       winnerNote.commitmentHash,
       winnerBid,
+      600n,
       bidDeadline,
-      winnerNote.claimAuthority
+      shieldedBidProver
     );
-    const loserCoverageProof = await signBidCoverage(
+    const loserCoverageProof = await signVerifierCoverage(
+      await shieldedBidVerifier.getAddress(),
       await vault.getAddress(),
       1n,
       loserNote.commitmentHash,
       loserBid,
+      500n,
       bidDeadline,
-      loserNote.claimAuthority
+      shieldedBidProver
     );
 
     await market.connect(bidder).placeShieldedBid(1n, winnerNote.commitmentHash, winnerBid, bidDeadline, winnerCoverageProof);

@@ -241,6 +241,36 @@ async function main(): Promise<void> {
     assert.equal(resolution.winningAmount, winningAmount);
   });
 
+  await runCase("cofhe dispatcher skips shielded bids above their available escrow", async () => {
+    const dispatcher = new CofheDispatcher(new InMemoryDispatchQueue(), () => 3_500);
+    const uncoveredAmount = 2_000n;
+    const coveredAmount = 900n;
+    const resolution = await dispatcher.dispatch({
+      auctionId: 89n,
+      requestId: "request-shielded-coverage",
+      winnerHandle: "winner-request-shielded-coverage",
+      amountHandle: "amount-request-shielded-coverage",
+      startingPrice: 1n,
+      bids: [
+        {
+          bidder: "0xshielded-undercovered",
+          encryptedBid: encodeEncryptedUint96(uncoveredAmount),
+          availableEscrow: 1n,
+          isShielded: true
+        },
+        {
+          bidder: "0xshielded-covered",
+          encryptedBid: encodeEncryptedUint96(coveredAmount),
+          availableEscrow: coveredAmount,
+          isShielded: true
+        }
+      ]
+    });
+
+    assert.equal(resolution.winner, "0xshielded-covered");
+    assert.equal(resolution.winningAmount, coveredAmount);
+  });
+
   await runCase("avs submitter aggregates signatures, validates fraud proofs, and writes symbolic slashing logs", async () => {
     const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "ffm-keeper-"));
     const slashingLogPath = path.join(tempDirectory, "slashing.json");

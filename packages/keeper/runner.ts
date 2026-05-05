@@ -44,14 +44,13 @@ const AVS_ABI = [
 ];
 
 const SHIELDED_VAULT_ABI = [
-  "function commitmentState(bytes32 commitmentHash) view returns (uint256 auctionId, bool refundUnlocked, bool claimed)"
+  "function commitmentState(bytes32 commitmentHash) view returns (uint256 auctionId, bool refundUnlocked, bool claimed)",
+  "function previewCommitment(bytes32 commitmentHash) view returns (uint256 auctionId, uint256 amount, bool refundUnlocked, bool claimed)"
 ];
 
 const SHIELDED_IDENTITY_REGISTRY_ABI = [
   "function identityForCommitment(uint256 auctionId, bytes32 commitmentHash) view returns (bytes32)"
 ];
-
-const MAX_SHIELDED_ESCROW = (1n << 96n) - 1n;
 
 type RuntimeMetrics = {
   activeAuctions: number;
@@ -683,6 +682,21 @@ async function collectEncryptedBidsFromChain(marketContract: Contract, auctionId
         if (commitmentAuctionId !== auctionId || refundUnlocked || claimed) {
           continue;
         }
+        let availableEscrow: bigint;
+        try {
+          const [previewAuctionId, amount, previewRefundUnlocked, previewClaimed] = (await vaultContract.previewCommitment(
+            commitmentHash
+          )) as readonly [bigint, bigint, boolean, boolean];
+          if (previewAuctionId !== auctionId || previewRefundUnlocked || previewClaimed) {
+            continue;
+          }
+          availableEscrow = BigInt(amount.toString());
+        } catch (error) {
+          console.warn(
+            `[keeper] skipped shielded commitment ${commitmentHash} for auction ${auctionId.toString()} because amount preview failed: ${normalizeError(error).message}`
+          );
+          continue;
+        }
         const identityHash =
           registryContract === undefined
             ? ZeroHash
@@ -690,7 +704,7 @@ async function collectEncryptedBidsFromChain(marketContract: Contract, auctionId
         bids.push({
           bidder: identityHash === ZeroHash ? commitmentHash : identityHash,
           encryptedBid: await marketContract.getShieldedEncryptedBid(auctionId, commitmentHash),
-          availableEscrow: MAX_SHIELDED_ESCROW,
+          availableEscrow,
           isShielded: true
         });
       }
@@ -871,6 +885,10 @@ function renderPrometheusMetrics(role: string, metrics: RuntimeMetrics): string 
     "# TYPE keeper_slashing_violations_total gauge",
     `keeper_slashing_violations_total{role="${role}"} ${metrics.slashingViolations}`
   ].join("\n");
+}
+
+function normalizeError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 main().catch((error) => {

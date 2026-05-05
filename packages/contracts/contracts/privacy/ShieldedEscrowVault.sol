@@ -23,7 +23,6 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
     }
 
     bytes32 private constant _ASSET_CLAIM_TAG = keccak256("FFM_SHIELDED_ASSET_CLAIM");
-    bytes32 private constant _BID_COVERAGE_TAG = keccak256("FFM_SHIELDED_BID_COVERAGE");
     bytes32 private constant _REFUND_CLAIM_TAG = keccak256("FFM_SHIELDED_REFUND_CLAIM");
     bytes32 private constant _REFUND_COMPENSATION_TAG = keccak256("FFM_SHIELDED_REFUND_COMPENSATION");
 
@@ -338,29 +337,22 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
         }
 
         address verifier = shieldedBidVerifier;
-        if (verifier != address(0)) {
-            bool valid = IShieldedBidVerifier(verifier).verifyBidCoverage(
-                address(this),
-                commitment.auctionId,
-                commitmentHash,
-                encryptedBid,
-                deadline,
-                signature
-            );
-            if (!valid) {
-                revert InvalidShieldedBidProof(commitmentHash, verifier);
-            }
-            return;
+        if (verifier == address(0)) {
+            revert InvalidShieldedBidProof(commitmentHash, address(0));
         }
 
-        _assertClaimAuthorityProof(
-            _BID_COVERAGE_TAG,
-            commitmentHash,
+        bool valid = IShieldedBidVerifier(verifier).verifyBidCoverage(
+            address(this),
             commitment.auctionId,
-            keccak256(abi.encode(encryptedBid)),
+            commitmentHash,
+            encryptedBid,
+            commitment.amount,
             deadline,
             signature
         );
+        if (!valid) {
+            revert InvalidShieldedBidProof(commitmentHash, verifier);
+        }
     }
 
     function verifyPlaintextBidCoverage(bytes32 commitmentHash, uint256 bidAmount)
@@ -464,29 +456,6 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
         }
 
         _usedClaimAuthorizations[authorizationDigest] = true;
-    }
-
-    function _assertClaimAuthorityProof(
-        bytes32 claimTag,
-        bytes32 commitmentHash,
-        uint256 auctionId,
-        bytes32 payloadHash,
-        uint256 deadline,
-        bytes calldata signature
-    ) internal view {
-        if (block.timestamp > deadline) {
-            revert ClaimAuthorizationExpired(deadline, block.timestamp);
-        }
-
-        CommitmentDeposit storage commitment = _requireRegisteredCommitment(commitmentHash);
-        address claimAuthority = commitment.claimAuthority;
-        bytes32 authorizationDigest =
-            keccak256(abi.encode(claimTag, block.chainid, address(this), auctionId, commitmentHash, payloadHash, deadline))
-                .toEthSignedMessageHash();
-        address recoveredAuthority = authorizationDigest.recover(signature);
-        if (recoveredAuthority != claimAuthority) {
-            revert InvalidClaimAuthority(commitmentHash, claimAuthority, recoveredAuthority);
-        }
     }
 
     function _requireRegisteredCommitment(bytes32 commitmentHash) internal view returns (CommitmentDeposit storage commitment) {

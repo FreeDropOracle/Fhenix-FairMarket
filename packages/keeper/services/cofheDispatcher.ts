@@ -44,6 +44,35 @@ export interface FheosBatchClient {
   resolveBatch(jobs: readonly CoFheDispatchJob[], requestTimeoutMs: number): Promise<CoFheResolution[]>;
 }
 
+const LIVE_COFHE_CLIENT_REQUIRED =
+  "Live CoFHE endpoint is not configured. Set KEEPER_FHEOS_ENDPOINT and KEEPER_FHEOS_API_KEY, or explicitly enable KEEPER_ALLOW_LOCAL_COFHE_SIMULATION=true for local deterministic tests only.";
+
+export class UnconfiguredFheosBatchClient implements FheosBatchClient {
+  async resolveBatch(_jobs: readonly CoFheDispatchJob[], _requestTimeoutMs: number): Promise<CoFheResolution[]> {
+    throw new Error(LIVE_COFHE_CLIENT_REQUIRED);
+  }
+}
+
+export function createFheosBatchClient(
+  config: KeeperConfig,
+  fetcher: typeof fetch = fetch
+): FheosBatchClient {
+  const hasLiveFheos =
+    config.fheosEndpoint.trim() !== "" &&
+    config.fheosApiKey.trim() !== "" &&
+    !config.fheosApiKey.includes("replace-with-your-key");
+
+  if (hasLiveFheos) {
+    return new HttpFheosBatchClient(config.fheosEndpoint, config.fheosApiKey, fetcher);
+  }
+
+  if (config.allowLocalCofheSimulation) {
+    return new LocalCofheBatchClient();
+  }
+
+  return new UnconfiguredFheosBatchClient();
+}
+
 export interface DispatchMetricsSnapshot {
   successfulBatches: number;
   failedBatches: number;
@@ -89,13 +118,14 @@ export class InMemoryDispatchQueue implements BatchDispatchQueue {
   }
 }
 
+// Local deterministic prototype only. This client decodes reversible test handles and must not be the production default.
 export class LocalCofheBatchClient implements FheosBatchClient {
   constructor(private readonly now: () => number = () => Date.now()) {}
 
   async resolveBatch(jobs: readonly CoFheDispatchJob[]): Promise<CoFheResolution[]> {
     return jobs.map((job) => {
       const startedAt = this.now();
-      const winner = pickHighestEncryptedBid(job.bids, job.startingPrice);
+      const winner = pickHighestLocalPrototypeEncryptedBid(job.bids, job.startingPrice);
       return {
         auctionId: job.auctionId,
         requestId: job.requestId,
@@ -104,7 +134,7 @@ export class LocalCofheBatchClient implements FheosBatchClient {
         winner: winner?.bidder ?? null,
         winnerKind: winner ? (winner.isShielded ? "shielded" : "public") : "none",
         winnerCiphertext: winner?.encryptedBid ?? ZERO_HASH,
-        winningAmount: winner ? decodeEncryptedNumeric(winner.encryptedBid) : 0n,
+        winningAmount: winner ? decodeLocalPrototypeEncryptedNumeric(winner.encryptedBid) : 0n,
         latencyMs: this.now() - startedAt,
         avsProof: buildSyntheticAvsProof(job.requestId, winner?.encryptedBid ?? ZERO_HASH)
       };
@@ -198,7 +228,7 @@ export class CofheDispatcher {
     private readonly queue: BatchDispatchQueue = new InMemoryDispatchQueue(),
     private readonly now: () => number = () => Date.now(),
     private readonly config: KeeperConfig = createKeeperConfig(),
-    private readonly client: FheosBatchClient = new LocalCofheBatchClient(),
+    private readonly client: FheosBatchClient = new UnconfiguredFheosBatchClient(),
     private readonly sleep: (ms: number) => Promise<void> = async () => Promise.resolve()
   ) {}
 
@@ -275,7 +305,7 @@ const CIPHERTEXT_PAYLOAD_MASK = (1n << 248n) - 1n;
 const EUINT32_KIND = 1n;
 const EUINT96_KIND = 3n;
 
-export function decodeEncryptedNumeric(ciphertext: string): bigint {
+export function decodeLocalPrototypeEncryptedNumeric(ciphertext: string): bigint {
   const parsed = BigInt(ciphertext);
   const kind = parsed >> CIPHERTEXT_KIND_SHIFT;
   if (kind !== EUINT32_KIND && kind !== EUINT96_KIND) {
@@ -285,11 +315,11 @@ export function decodeEncryptedNumeric(ciphertext: string): bigint {
   return parsed & CIPHERTEXT_PAYLOAD_MASK;
 }
 
-export function decodeEncryptedUint32(ciphertext: string): bigint {
-  return decodeEncryptedNumeric(ciphertext);
+export function decodeLocalPrototypeEncryptedUint32(ciphertext: string): bigint {
+  return decodeLocalPrototypeEncryptedNumeric(ciphertext);
 }
 
-export function pickHighestEncryptedBid(
+export function pickHighestLocalPrototypeEncryptedBid(
   bids: readonly EncryptedBidRecord[],
   startingPrice: bigint = 0n
 ): EncryptedBidRecord | null {
@@ -297,7 +327,7 @@ export function pickHighestEncryptedBid(
   let highestBid = -1n;
 
   for (const bid of bids) {
-    const amount = decodeEncryptedNumeric(bid.encryptedBid);
+    const amount = decodeLocalPrototypeEncryptedNumeric(bid.encryptedBid);
     if (amount > bid.availableEscrow) {
       continue;
     }

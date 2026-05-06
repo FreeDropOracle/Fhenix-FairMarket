@@ -13,6 +13,8 @@ const CIPHERTEXT_KIND_SHIFT = 248n;
 const EUINT96_KIND = 3n;
 const MAX_EUINT96_VALUE = (1n << 96n) - 1n;
 const LOCAL_PROTOTYPE_CHAIN_IDS = new Set(["0x539", "0x7a69"]);
+const PROTOTYPE_BID_DISABLED_MESSAGE =
+  "Prototype wallet bidding is disabled on this network until real CoFHE ciphertext-input support is wired into the frontend.";
 
 type JsonRpcReceipt = {
   status?: string;
@@ -69,7 +71,8 @@ async function readChainId(provider: Eip1193Provider) {
   })) as string).toLowerCase();
 }
 
-function encodeEuint96(value: bigint) {
+// Local deterministic envelope only. Production bidding must use opaque handles from a live CoFHE SDK/provider.
+function encodeLocalPrototypeEuint96(value: bigint) {
   if (value < 0n || value > MAX_EUINT96_VALUE) {
     throw new Error("Bid amount is outside the current prototype bid-handle range.");
   }
@@ -154,9 +157,7 @@ async function assertPrototypeBidPathAllowed(provider: Eip1193Provider) {
     return;
   }
 
-  throw new Error(
-    "Prototype wallet bidding is disabled on this network until real CoFHE ciphertext-input support is wired into the frontend."
-  );
+  throw new Error(PROTOTYPE_BID_DISABLED_MESSAGE);
 }
 
 async function readEncryptedBidWithWallet(
@@ -258,7 +259,7 @@ export async function placeBidWithWallet({
   try {
     await assertPrototypeBidPathAllowed(provider);
 
-    const encryptedBid = encodeEuint96(amountWei);
+    const encryptedBid = encodeLocalPrototypeEuint96(amountWei);
     onProgress?.("Preparing the local prototype bid envelope...");
     onProgress?.("Confirm the bid transaction in your wallet...");
     const txHash = await sendTransaction(provider, {

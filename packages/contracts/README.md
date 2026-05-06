@@ -43,10 +43,11 @@ pnpm coverage
 - The issue text references an older package name for the CoFHE Hardhat plugin. The maintained package integrated here is `cofhe-hardhat-plugin`.
 - Security status: this workspace is under remediation. The current `CofheAdapter` is local-development only and deployment scripts intentionally block the prototype adapter on public networks.
 - The CoFHE Hardhat plugin is installed and version-pinned in the workspace so later Fhenix-network phases can activate it without reworking dependencies.
+- `IProductionCofheAdapter` documents the production boundary expected from a live CoFHE provider: opaque ciphertext handles only, with no plaintext constructors, raw-ciphertext accessors, or decode helpers.
 - The default Phase 1 test path stays on the deterministic local adapter/mock implementation to keep the architectural foundation stable while full network-backed CoFHE flows are deferred to later phases.
 - The adapter now models typed ciphertext handles (`euint32`, `ebool`), comparison helpers (`lte`, `gt`), conditional selection, and encrypted bid-coverage checks.
 - The Phase 2 refund path is strictly pull-based. Compensation is computed per claimant and no payout loops are used in the core market contract.
-- The core contract deliberately avoids importing FHE libraries directly. Encrypted bid logic should continue to flow only through `ICofheAdapter`.
+- The core contract deliberately avoids importing FHE libraries directly. Encrypted bid logic should continue to flow only through the adapter boundary, and public deployments should use an opaque production adapter rather than the local `ICofheAdapter` test surface.
 - Privacy Phase 1 does not claim absolute blockchain privacy yet. It introduces commitment-based escrow and shielded refund claims as the protocol base for later commitment-keyed bidding and proof-based settlement.
 - Privacy Phase 2 keeps shielded bidders out of the public bidder registry and settles shielded winners without disclosing a winner wallet address during finalization. It still does not hide calldata senders, aggregate escrow totals, or claim-time witness disclosure.
 - Privacy Phase 3 replaces raw winning-note references in settlement with alias-based `identityHash` flow, reducing direct linkability between settlement and later claims.

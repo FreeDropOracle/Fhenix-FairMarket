@@ -57,6 +57,7 @@ $commonEnvironment = [ordered]@{
   "KEEPER_AVS_ADDRESS" = [string]$runtime.contracts.avs
   "KEEPER_FHEOS_ENDPOINT" = ""
   "KEEPER_FHEOS_API_KEY" = ""
+  "KEEPER_ALLOW_LOCAL_COFHE_SIMULATION" = "false"
   "KEEPER_POLL_INTERVAL_MS" = "30000"
   "KEEPER_FINALIZE_LEAD_SECONDS" = "60"
   "KEEPER_FINALIZATION_DRIFT_SECONDS" = "12"

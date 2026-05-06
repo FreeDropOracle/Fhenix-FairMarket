@@ -2,6 +2,10 @@
 pragma solidity ^0.8.25;
 
 interface ICofheAdapter {
+    // Local/prototype adapter surface.
+    // Production integrations should not expose plaintext constructors or raw
+    // ciphertext accessors. See IProductionCofheAdapter for the opaque-handle
+    // boundary expected from a live CoFHE provider.
     function lte(bytes32 ciphertext, uint256 plaintext) external pure returns (bool);
 
     function gt(bytes32 ciphertext, uint256 plaintext) external pure returns (bool);
@@ -22,6 +26,4 @@ interface ICofheAdapter {
     function ciphertextKind(bytes32 ciphertext) external pure returns (uint8);
 
     function seal(bytes32 ciphertext, address viewer) external pure returns (bytes32);
-
-    function getRawCiphertext(bytes32 ciphertext) external pure returns (bytes32);
 }

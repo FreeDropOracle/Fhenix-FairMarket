@@ -568,12 +568,10 @@ describe("FhenixFairMarket Phase 1", function () {
       await adapter.asEuint32(7)
     );
     expect(await adapter.seal(ciphertext, ethers.ZeroAddress)).to.not.equal(ethers.ZeroHash);
-    expect(await adapter.getRawCiphertext(ciphertext)).to.equal(ciphertext);
     expect(await mockCofhe.asEuint32(42)).to.equal(ciphertext);
     expect(await mockCofhe.lte(ciphertext, 100)).to.equal(true);
     expect(await mockCofhe.gt(ciphertext, 40)).to.equal(true);
     expect(await mockCofhe.seal(ciphertext, ethers.ZeroAddress)).to.not.equal(ethers.ZeroHash);
-    expect(await mockCofhe.getRawCiphertext(ciphertext)).to.equal(ciphertext);
     expect(await mockCofhe.expectPlaintext(ciphertext, 42)).to.equal(true);
     expect(await mockCofhe.expectBoolPlaintext(encryptedTrue, true)).to.equal(true);
     expect(await mockCofhe.expectBoolPlaintext(encryptedFalse, false)).to.equal(true);

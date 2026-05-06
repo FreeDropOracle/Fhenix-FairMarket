@@ -580,7 +580,7 @@ contract FhenixFairMarket is
         bytes32 winnerCiphertext,
         uint256 winningAmount,
         bytes calldata avsProof
-    ) external nonReentrant onlyOwner auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.RESOLVING) returns (bool) {
+    ) external nonReentrant auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.RESOLVING) returns (bool) {
         return _submitResolution(auctionId, winner, winnerCiphertext, winningAmount, avsProof);
     }
 
@@ -590,7 +590,7 @@ contract FhenixFairMarket is
         bytes32 winnerCiphertext,
         uint256 winningAmount,
         bytes calldata avsProof
-    ) external nonReentrant onlyOwner auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.RESOLVING) returns (bool) {
+    ) external nonReentrant auctionExists(auctionId) onlyAuctionState(auctionId, AuctionState.RESOLVING) returns (bool) {
         return _submitShieldedResolution(auctionId, winnerIdentityHash, winnerCiphertext, winningAmount, avsProof);
     }
 

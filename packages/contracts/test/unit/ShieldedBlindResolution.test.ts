@@ -316,7 +316,7 @@ describe("Privacy Phase 2 blind resolution", function () {
       avsOperatorTwo
     ]);
 
-    await expect(market.connect(owner).submitShieldedResolution(1n, winnerNote.identityHash, winnerBid, 450n, proof))
+    await expect(market.connect(outsider).submitShieldedResolution(1n, winnerNote.identityHash, winnerBid, 450n, proof))
       .to.emit(market, "ResolutionRecorded")
       .withArgs(1n, ethers.ZeroAddress, winnerBid);
 

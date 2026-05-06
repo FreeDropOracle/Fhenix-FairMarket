@@ -624,13 +624,14 @@ contract FhenixFairMarket is
         Auction storage auction = _auctions[auctionId];
         uint256 timeoutWindow = previewDynamicTimeout();
         uint256 elapsed = block.timestamp - auction.resolvingSince;
+        uint256 totalEscrowIncludingShielded = _totalEscrowIncludingShielded(auctionId, auction);
 
         if (elapsed < timeoutWindow) {
             revert FallbackThresholdNotReached(elapsed, timeoutWindow);
         }
 
         uint256 finalizeReward = _finalizationRewards[auctionId];
-        auction.slashAmount = auction.totalEscrow == 0
+        auction.slashAmount = totalEscrowIncludingShielded == 0
             ? 0
             : (finalizeReward >= auction.sellerDeposit ? 0 : auction.sellerDeposit - finalizeReward);
         _observeNetwork();
@@ -986,11 +987,11 @@ contract FhenixFairMarket is
         }
 
         if (auction.state == AuctionState.VOIDED) {
-            if (!_hasAnyEscrow(auctionId, auction)) {
-                return finalizeReward >= auction.sellerDeposit ? 0 : auction.sellerDeposit - finalizeReward;
+            if (auction.slashAmount != 0 || _totalEscrowIncludingShielded(auctionId, auction) != 0) {
+                return 0;
             }
 
-            return 0;
+            return finalizeReward >= auction.sellerDeposit ? 0 : auction.sellerDeposit - finalizeReward;
         }
 
         return 0;
@@ -1283,7 +1284,8 @@ contract FhenixFairMarket is
     }
 
     function _computeCancellationSlash(uint256 auctionId, Auction storage auction) internal view returns (uint256) {
-        if (!_hasAnyEscrow(auctionId, auction)) {
+        uint256 totalEscrowIncludingShielded = _totalEscrowIncludingShielded(auctionId, auction);
+        if (totalEscrowIncludingShielded == 0) {
             return 0;
         }
         if (address(settlementEngine) == address(0)) {
@@ -1292,20 +1294,26 @@ contract FhenixFairMarket is
 
         uint256 elapsed = block.timestamp - auction.createdAt;
         uint256 duration = uint256(auction.endTime) - auction.createdAt;
-        uint256 slashEligibilityEscrow = auction.totalEscrow == 0 ? 1 : auction.totalEscrow;
 
-        return settlementEngine.computeCancellationSlash(auction.sellerDeposit, elapsed, duration, slashEligibilityEscrow);
+        return
+            settlementEngine.computeCancellationSlash(
+                auction.sellerDeposit,
+                elapsed,
+                duration,
+                totalEscrowIncludingShielded
+            );
     }
 
-    function _hasAnyEscrow(uint256 auctionId, Auction storage auction) internal view returns (bool) {
-        if (auction.totalEscrow != 0) {
-            return true;
-        }
+    function _totalEscrowIncludingShielded(uint256 auctionId, Auction storage auction) internal view returns (uint256) {
+        return auction.totalEscrow + _shieldedEscrowTotal(auctionId);
+    }
+
+    function _shieldedEscrowTotal(uint256 auctionId) internal view returns (uint256) {
         if (address(shieldedEscrowVault).code.length < 1) {
-            return false;
+            return 0;
         }
 
-        return shieldedEscrowVault.hasEscrowForAuction(auctionId);
+        return shieldedEscrowVault.totalEscrowForAuction(auctionId);
     }
 
     function _computeFinalizeReward(uint256 sellerDeposit) internal pure returns (uint256) {

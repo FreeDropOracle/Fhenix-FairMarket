@@ -131,6 +131,7 @@ describe("ShieldedEscrowVault Privacy Phase 1", function () {
 
     expect(await market.escrowBalances(1n, bidder.address)).to.equal(0n);
     expect(await vault.hasEscrowForAuction(1n)).to.equal(true);
+    expect(await vault.totalEscrowForAuction(1n)).to.equal(ethers.parseEther("2"));
     expect(await registry.commitmentForIdentity(1n, note.identityHash)).to.equal(note.commitment);
     expect(await vault.claimAuthorityForCommitment(note.commitment)).to.equal(note.claimAuthority.address);
 
@@ -183,6 +184,54 @@ describe("ShieldedEscrowVault Privacy Phase 1", function () {
     await expect(
       vault.connect(outsider).claimRefundWithAuthorization(note.commitment, bidder.address, deadline, refundSignature)
     ).to.be.revertedWithCustomError(vault, "CommitmentAlreadyClaimed");
+  });
+
+  it("routes the full seller slash into shielded refunds when fallback void hits a shielded-only auction", async function () {
+    const { bidder, market, nft, owner, outsider, seller, vault } = await loadFixture(createShieldedFixture);
+    const note = buildShieldedNote("fallback-void-shielded-only");
+    const shieldedAmount = ethers.parseEther("2");
+
+    await market
+      .connect(bidder)
+      .lockShieldedEscrow(1n, note.identityHash, note.commitment, note.claimAuthority.address, { value: shieldedAmount });
+
+    const auction = await market.getAuction(1n);
+    const sellerDeposit = BigInt(auction[4]);
+    const finalizeReward = (sellerDeposit * 20n) / 10_000n;
+
+    await time.increase(24 * 60 * 60 + 1);
+    await market.connect(owner).triggerFinalize(1n);
+    await time.increase(await market.previewDynamicTimeout());
+    await market.triggerFallbackVoid(1n);
+
+    expect(await nft.ownerOf(1n)).to.equal(seller.address);
+    expect(await market.previewSellerPayout(1n)).to.equal(0n);
+    expect(await vault.totalEscrowForAuction(1n)).to.equal(shieldedAmount);
+
+    const deadline = BigInt((await time.latest()) + 3600);
+    const refundSignature = await signRefundClaim(
+      await vault.getAddress(),
+      1n,
+      note.commitment,
+      bidder.address,
+      deadline,
+      note.claimAuthority
+    );
+
+    await expect(() =>
+      vault.connect(outsider).claimRefundWithAuthorization(note.commitment, bidder.address, deadline, refundSignature)
+    ).to.changeEtherBalances(
+      [vault, bidder],
+      [-(shieldedAmount + sellerDeposit - finalizeReward), shieldedAmount + sellerDeposit - finalizeReward]
+    );
+
+    await expect(market.connect(seller).claimSellerProceeds(1n)).to.be.revertedWithCustomError(
+      market,
+      "NoClaimableBalance"
+    );
+
+    await market.connect(owner).claimFinalizeReward(1n);
+    expect(await ethers.provider.getBalance(await market.getAddress())).to.equal(0n);
   });
 
   it("opens the shielded refund path after a no-winner finalization and lets the seller reclaim the NFT", async function () {

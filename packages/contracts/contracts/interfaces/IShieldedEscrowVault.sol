@@ -66,5 +66,7 @@ interface IShieldedEscrowVault {
 
     function claimAuthorityForCommitment(bytes32 commitmentHash) external view returns (address);
 
+    function totalEscrowForAuction(uint256 auctionId) external view returns (uint256);
+
     function hasEscrowForAuction(uint256 auctionId) external view returns (bool);
 }

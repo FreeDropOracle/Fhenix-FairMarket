@@ -384,6 +384,10 @@ contract ShieldedEscrowVault is Ownable, ReentrancyGuard, IShieldedEscrowVault {
         return _commitments[commitmentHash].claimAuthority;
     }
 
+    function totalEscrowForAuction(uint256 auctionId) external view override returns (uint256) {
+        return _auctionTotals[auctionId];
+    }
+
     function hasEscrowForAuction(uint256 auctionId) external view override returns (bool) {
         return _auctionTotals[auctionId] != 0;
     }

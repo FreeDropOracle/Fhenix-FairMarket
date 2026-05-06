@@ -521,6 +521,28 @@ describe("FhenixFairMarket Phase 1", function () {
     expect(await nft.ownerOf(1n)).to.equal(seller.address);
   });
 
+  it("returns the seller deposit minus the finalize reward when fallback void happens without any escrow", async function () {
+    const { market, seller } = await loadFixture(createAuctionFixture);
+
+    const auction = await market.getAuction(1n);
+    const sellerDeposit = BigInt(auction[4]);
+    const finalizeReward = (sellerDeposit * 20n) / 10_000n;
+
+    await time.increase(24 * 60 * 60 + 1);
+    await market.connect(seller).triggerFinalize(1n);
+
+    await time.increase(await market.previewDynamicTimeout());
+    await market.triggerFallbackVoid(1n);
+
+    expect(await market.previewSellerPayout(1n)).to.equal(sellerDeposit - finalizeReward);
+    await expect(() => market.connect(seller).claimSellerProceeds(1n)).to.changeEtherBalance(
+      seller,
+      sellerDeposit - finalizeReward
+    );
+    await expect(() => market.connect(seller).claimFinalizeReward(1n)).to.changeEtherBalance(seller, finalizeReward);
+    expect(await ethers.provider.getBalance(await market.getAddress())).to.equal(0n);
+  });
+
   it("rejects fallback void when the auction is not in resolving state", async function () {
     const { market } = await loadFixture(createAuctionFixture);
 

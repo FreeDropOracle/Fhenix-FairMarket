@@ -29,7 +29,7 @@ describe("Phase 2 async resolution and settlement", function () {
   });
 
   it("settles finalized auctions through pull-based refunds, seller proceeds, and deferred NFT claims", async function () {
-    const { adapter, avs, avsOperatorOne, avsOperatorTwo, bidder, bidderTwo, market, nft, owner, seller } =
+    const { adapter, avs, avsOperatorOne, avsOperatorTwo, bidder, bidderTwo, market, nft, outsider, seller } =
       await loadFixture(createPhase2AuctionFixture);
 
     await market.connect(bidder).lockEscrow(1n, { value: 600n });
@@ -48,7 +48,7 @@ describe("Phase 2 async resolution and settlement", function () {
     const { proof } = await buildPhase3ResolutionProof(market, avs, 1n, encryptedBids, [avsOperatorOne, avsOperatorTwo]);
 
     await expect(
-      market.connect(owner)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
+      market.connect(outsider)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
         1n,
         bidder.address,
         winnerBid,
@@ -58,6 +58,16 @@ describe("Phase 2 async resolution and settlement", function () {
     )
       .to.emit(market, "ResolutionRecorded")
       .withArgs(1n, bidder.address, winnerBid);
+
+    await expect(
+      market.connect(seller)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
+        1n,
+        bidder.address,
+        winnerBid,
+        450n,
+        proof
+      )
+    ).to.be.revertedWithCustomError(market, "UnexpectedAuctionState");
 
     const winnerPreview = await market.previewRefund(1n, bidder.address);
     const runnerUpPreview = await market.previewRefund(1n, bidderTwo.address);
@@ -151,7 +161,7 @@ describe("Phase 2 async resolution and settlement", function () {
   });
 
   it("keeps the auction in resolving and slashes attesters when the submitted resolution payload is tampered with", async function () {
-    const { adapter, avs, avsOperatorOne, avsOperatorTwo, bidder, bidderTwo, market, owner } =
+    const { adapter, avs, avsOperatorOne, avsOperatorTwo, bidder, bidderTwo, market, outsider } =
       await loadFixture(createPhase2AuctionFixture);
 
     await market.connect(bidder).lockEscrow(1n, { value: 600n });
@@ -170,7 +180,7 @@ describe("Phase 2 async resolution and settlement", function () {
     ]);
 
     await expect(
-      market.connect(owner)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
+      market.connect(outsider)["submitResolution(uint256,address,bytes32,uint256,bytes)"](
         1n,
         bidder.address,
         await adapter.asEuint32(450),

@@ -330,9 +330,9 @@ async function startAvsSubmitter(
 
   if (canSubmitOnChain) {
     const provider = new JsonRpcProvider(config.rpcUrl);
-    const keeperWallet = createWalletOrUndefined(process.env.PRIVATE_KEY, provider);
-    if (keeperWallet) {
-      writer = new EthersResolutionWriter(new Contract(config.marketAddress, MARKET_ABI, keeperWallet));
+    const submitterWallet = createWalletOrUndefined(process.env.PRIVATE_KEY, provider);
+    if (submitterWallet) {
+      writer = new EthersResolutionWriter(new Contract(config.marketAddress, MARKET_ABI, submitterWallet));
       digestReader = new Contract(config.avsAddress, AVS_ABI, provider);
       operatorSigners = config.avsOperatorPrivateKeys
         .filter(isValidPrivateKey)
@@ -345,7 +345,7 @@ async function startAvsSubmitter(
         );
     }
   } else {
-    console.log("[keeper] avs-submitter will observe only until market, AVS, and operator keys are configured");
+    console.log("[keeper] avs-submitter will observe only until market, AVS, operator keys, and a relayer PRIVATE_KEY are configured");
   }
 
   setInterval(async () => {

@@ -2,6 +2,11 @@
 pragma solidity ^0.8.25;
 
 library CofheCiphertextEncoding {
+    // Deterministic local-test encoding only.
+    // These helpers pack plaintext values into bytes32 so tests can run without
+    // a live CoFHE provider. Any production path that accepts user bids through
+    // this library is not confidential and must be replaced by opaque provider
+    // ciphertext handles.
     uint256 private constant _KIND_SHIFT = 248;
     uint256 private constant _PAYLOAD_MASK = type(uint248).max;
 

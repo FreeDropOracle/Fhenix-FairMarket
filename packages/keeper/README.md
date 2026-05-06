@@ -52,7 +52,8 @@ To execute a real local lifecycle you must fill:
 - `KEEPER_AVS_ADDRESS`
 - `PRIVATE_KEY`
 - `KEEPER_AVS_OPERATOR_KEYS`
-- optionally `KEEPER_FHEOS_ENDPOINT` and `KEEPER_FHEOS_API_KEY` if a live CoFHE endpoint is available
+- `KEEPER_FHEOS_ENDPOINT` and `KEEPER_FHEOS_API_KEY` when running live bid resolution
+- `KEEPER_ALLOW_LOCAL_COFHE_SIMULATION=true` only for local deterministic prototype simulation
 
 Ports:
 
@@ -69,5 +70,5 @@ Prometheus loads alert rules from [`monitoring/alerts.yml`](../../monitoring/ale
 - Redis is used for the distributed finalize lock and per-auction nonce coordination.
 - Auction state and symbolic slashing logs are persisted under `packages/keeper/state/`.
 - The runner now backfills auctions from chain state, queues resolving auctions for dispatch, and forwards completed resolutions to the AVS submitter when keys are configured.
-- If `KEEPER_FHEOS_ENDPOINT` and `KEEPER_FHEOS_API_KEY` are unset, the dispatcher stays on the local CoFHE simulation path by design.
+- If `KEEPER_FHEOS_ENDPOINT` and `KEEPER_FHEOS_API_KEY` are unset, the dispatcher refuses to decode prototype bid handles unless `KEEPER_ALLOW_LOCAL_COFHE_SIMULATION=true` is explicitly set.
 - For real secrets, pass `--env-file packages/keeper/.env` to override the example values.

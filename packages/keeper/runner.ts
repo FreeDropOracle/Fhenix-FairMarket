@@ -9,8 +9,7 @@ import { AuctionMonitor, estimateFinalizeReward, type AuctionFinalizer, type Mar
 import { AvsSubmitter, type AVSOperatorSigner, type AttestationPayload, type AttestationProofEnvelope } from "./services/avsSubmitter";
 import {
   CofheDispatcher,
-  HttpFheosBatchClient,
-  LocalCofheBatchClient,
+  createFheosBatchClient,
   type DispatchMetricsSnapshot,
   type BatchDispatchQueue,
   type CoFheDispatchJob,
@@ -247,10 +246,18 @@ async function startDispatcher(
   applyStoreSnapshot(metrics, await buildStoreMetricsSnapshot(store));
 
   const queue = new StoreBackedDispatchQueue(store);
-  const client =
-    config.fheosApiKey.trim() !== "" && !config.fheosApiKey.includes("replace-with-your-key")
-      ? new HttpFheosBatchClient(config.fheosEndpoint, config.fheosApiKey)
-      : new LocalCofheBatchClient();
+  const hasLiveFheos =
+    config.fheosEndpoint.trim() !== "" &&
+    config.fheosApiKey.trim() !== "" &&
+    !config.fheosApiKey.includes("replace-with-your-key");
+  if (!hasLiveFheos && config.allowLocalCofheSimulation) {
+    console.warn("[keeper] local CoFHE simulation enabled; do not use this mode for public-network bid privacy");
+  }
+  if (!hasLiveFheos && !config.allowLocalCofheSimulation) {
+    console.warn("[keeper] live CoFHE endpoint is not configured; dispatcher will not decode prototype bid handles");
+  }
+
+  const client = createFheosBatchClient(config);
   const dispatcher = new CofheDispatcher(queue, () => Date.now(), config, client);
 
   console.log(`[keeper] cofhe-dispatcher ready for batches up to ${config.maxBatchSize} auctions`);

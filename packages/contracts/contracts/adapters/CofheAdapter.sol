@@ -5,8 +5,11 @@ import "../interfaces/ICofheAdapter.sol";
 import "../utils/CofheCiphertextEncoding.sol";
 
 /// @notice Local-development prototype adapter only.
-/// @dev This adapter uses reversible placeholder encoding and MUST NOT be used
-///      as a production privacy boundary on public networks.
+/// @dev This adapter uses reversible placeholder encoding. It exists so local
+///      unit tests and deterministic fixtures can exercise the market state
+///      machine before a live CoFHE provider is wired in. It MUST NOT be used
+///      as a production privacy boundary on public networks because bid values
+///      can be recovered from the placeholder `bytes32` payload.
 contract CofheAdapter is ICofheAdapter {
     using CofheCiphertextEncoding for bytes32;
 
@@ -54,9 +57,5 @@ contract CofheAdapter is ICofheAdapter {
 
     function seal(bytes32 ciphertext, address viewer) external pure override returns (bytes32) {
         return keccak256(abi.encodePacked(ciphertext, viewer));
-    }
-
-    function getRawCiphertext(bytes32 ciphertext) external pure override returns (bytes32) {
-        return ciphertext;
     }
 }

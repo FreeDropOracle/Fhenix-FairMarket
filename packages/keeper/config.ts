@@ -19,6 +19,7 @@ export interface KeeperConfig {
   avsOperatorPrivateKeys: string[];
   fheosEndpoint: string;
   fheosApiKey: string;
+  allowLocalCofheSimulation: boolean;
   stateFilePath: string;
   slashingLogPath: string;
   metricsPort: number;
@@ -45,6 +46,7 @@ export const defaultKeeperConfig: KeeperConfig = {
   avsOperatorPrivateKeys: [],
   fheosEndpoint: "",
   fheosApiKey: "",
+  allowLocalCofheSimulation: false,
   stateFilePath: "./state/keeper-state.json",
   slashingLogPath: "./state/slashing-log.json",
   metricsPort: 9400
@@ -82,6 +84,10 @@ export function createKeeperConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
     avsOperatorPrivateKeys: resolveList(env.KEEPER_AVS_OPERATOR_KEYS),
     fheosEndpoint: env.KEEPER_FHEOS_ENDPOINT ?? defaultKeeperConfig.fheosEndpoint,
     fheosApiKey: env.KEEPER_FHEOS_API_KEY ?? defaultKeeperConfig.fheosApiKey,
+    allowLocalCofheSimulation: resolveBoolean(
+      env.KEEPER_ALLOW_LOCAL_COFHE_SIMULATION,
+      defaultKeeperConfig.allowLocalCofheSimulation
+    ),
     stateFilePath: env.KEEPER_STATE_FILE_PATH ?? defaultKeeperConfig.stateFilePath,
     slashingLogPath: env.KEEPER_SLASHING_LOG_PATH ?? defaultKeeperConfig.slashingLogPath,
     metricsPort: resolveInteger(env.KEEPER_METRICS_PORT, defaultKeeperConfig.metricsPort)
@@ -95,6 +101,18 @@ function resolveInteger(rawValue: string | undefined, fallback: number): number 
 
   const parsed = Number.parseInt(rawValue, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function resolveBoolean(rawValue: string | undefined, fallback: boolean): boolean {
+  if (rawValue === undefined || rawValue.trim() === "") {
+    return fallback;
+  }
+
+  const normalized = rawValue.trim().toLowerCase();
+  if (["1", "true", "yes", "y"].includes(normalized)) {
+    return true;
+  }
+  return ["0", "false", "no", "n"].includes(normalized) ? false : fallback;
 }
 
 function resolveList(rawValue: string | undefined): string[] {

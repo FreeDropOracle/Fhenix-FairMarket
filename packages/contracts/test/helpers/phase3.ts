@@ -2,7 +2,7 @@ import { AbiCoder, ZeroHash, getBytes, type Signer } from "ethers";
 
 import { AuctionMonitor } from "../../../keeper/services/auctionMonitor";
 import { AvsSubmitter } from "../../../keeper/services/avsSubmitter";
-import { CofheDispatcher, type EncryptedBidRecord } from "../../../keeper/services/cofheDispatcher";
+import { CofheDispatcher, LocalCofheBatchClient, type EncryptedBidRecord } from "../../../keeper/services/cofheDispatcher";
 
 export async function collectEncryptedBids(
   market: {
@@ -109,7 +109,7 @@ export async function buildPhase3ResolutionProof(
 ) {
   const monitor = new AuctionMonitor(market);
   const request = await monitor.inspectTriggeredAuction(auctionId);
-  const dispatcher = new CofheDispatcher();
+  const dispatcher = new CofheDispatcher(undefined, undefined, undefined, new LocalCofheBatchClient());
   const resolution = await dispatcher.dispatch({
     auctionId,
     requestId: request.requestId,
@@ -194,7 +194,7 @@ export async function buildShieldedResolutionProof(
 ) {
   const monitor = new AuctionMonitor(market);
   const request = await monitor.inspectTriggeredAuction(auctionId);
-  const dispatcher = new CofheDispatcher();
+  const dispatcher = new CofheDispatcher(undefined, undefined, undefined, new LocalCofheBatchClient());
   const resolution = await dispatcher.dispatch({
     auctionId,
     requestId: request.requestId,

@@ -12,7 +12,13 @@ import {
   type MarketMonitorReader
 } from "../services/auctionMonitor";
 import { AvsSubmitter, aggregateSignatures, validateFraudProof } from "../services/avsSubmitter";
-import { CofheDispatcher, InMemoryDispatchQueue, type CoFheDispatchJob } from "../services/cofheDispatcher";
+import {
+  CofheDispatcher,
+  InMemoryDispatchQueue,
+  LocalCofheBatchClient,
+  createFheosBatchClient,
+  type CoFheDispatchJob
+} from "../services/cofheDispatcher";
 import { InMemoryAuctionStateStore } from "../stores/auctionStateStore";
 import { InMemoryLockCoordinator } from "../stores/lockCoordinator";
 import { JsonSlashingLogStore } from "../stores/slashingLogStore";
@@ -22,7 +28,8 @@ async function main(): Promise<void> {
     const config = createKeeperConfigFromEnv({
       KEEPER_POLL_INTERVAL_MS: "15000",
       KEEPER_MAX_BATCH_SIZE: "10",
-      KEEPER_FHEOS_API_KEY: "secret"
+      KEEPER_FHEOS_API_KEY: "secret",
+      KEEPER_ALLOW_LOCAL_COFHE_SIMULATION: "true"
     });
 
     assert.equal(config.pollIntervalMs, 15_000);
@@ -31,6 +38,7 @@ async function main(): Promise<void> {
     assert.equal(config.finalizeLeadSeconds, 60);
     assert.equal(config.requestTimeoutMs, 120_000);
     assert.deepEqual(config.avsOperatorPrivateKeys, []);
+    assert.equal(config.allowLocalCofheSimulation, true);
   });
 
   await runCase("auction monitor schedules due auctions, estimates reward, and records retries", async () => {
@@ -182,7 +190,8 @@ async function main(): Promise<void> {
       () => 1_000,
       createKeeperConfigFromEnv({
         KEEPER_MAX_BATCH_SIZE: "10"
-      })
+      }),
+      new LocalCofheBatchClient(() => 1_000)
     );
 
     const jobs = Array.from({ length: 12 }, (_, index) =>
@@ -206,8 +215,23 @@ async function main(): Promise<void> {
     assert.equal((await queue.getCompleted("request-12"))?.winnerCiphertext, encodeEncryptedUint32(111n));
   });
 
+  await runCase("cofhe dispatcher refuses prototype decoding unless local simulation is explicit", async () => {
+    const dispatcher = new CofheDispatcher(new InMemoryDispatchQueue(), () => 2_500);
+    await assert.rejects(() => dispatcher.dispatch(buildJob(9n, "request-no-local-fallback", 100n)), /Live CoFHE endpoint/);
+
+    const localClient = createFheosBatchClient(
+      createKeeperConfigFromEnv({
+        KEEPER_ALLOW_LOCAL_COFHE_SIMULATION: "true"
+      })
+    );
+    const [resolution] = await localClient.resolveBatch([buildJob(10n, "request-local-opt-in", 100n)], 1_000);
+
+    assert.equal(resolution.winner, "0x00000000000000000000000000000000000000aa");
+    assert.equal(resolution.winningAmount, 100n);
+  });
+
   await runCase("cofhe dispatcher respects the public opening bid and can yield a no-winner result", async () => {
-    const dispatcher = new CofheDispatcher(new InMemoryDispatchQueue(), () => 2_000);
+    const dispatcher = new CofheDispatcher(new InMemoryDispatchQueue(), () => 2_000, undefined, new LocalCofheBatchClient());
 
     const resolution = await dispatcher.dispatch(buildJob(77n, "request-opening-floor", 450n, 500n));
     assert.equal(resolution.winner, null);
@@ -215,7 +239,7 @@ async function main(): Promise<void> {
   });
 
   await runCase("cofhe dispatcher supports 96-bit confidential bids for live wei-sized amounts", async () => {
-    const dispatcher = new CofheDispatcher(new InMemoryDispatchQueue(), () => 3_000);
+    const dispatcher = new CofheDispatcher(new InMemoryDispatchQueue(), () => 3_000, undefined, new LocalCofheBatchClient());
     const winningAmount = 1250000000000000000n;
     const resolution = await dispatcher.dispatch({
       auctionId: 88n,
@@ -242,7 +266,7 @@ async function main(): Promise<void> {
   });
 
   await runCase("cofhe dispatcher skips shielded bids above their available escrow", async () => {
-    const dispatcher = new CofheDispatcher(new InMemoryDispatchQueue(), () => 3_500);
+    const dispatcher = new CofheDispatcher(new InMemoryDispatchQueue(), () => 3_500, undefined, new LocalCofheBatchClient());
     const uncoveredAmount = 2_000n;
     const coveredAmount = 900n;
     const resolution = await dispatcher.dispatch({

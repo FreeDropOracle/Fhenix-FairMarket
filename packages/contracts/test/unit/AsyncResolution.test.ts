@@ -2,7 +2,7 @@ import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-import { createPhase2AuctionFixture } from "../helpers/fixtures";
+import { createPhase2AuctionFixture, getCoverageSafeDeployOverrides } from "../helpers/fixtures";
 import { buildPhase3ResolutionProof, collectEncryptedBids } from "../helpers/phase3";
 
 describe("Phase 2 async resolution and settlement", function () {
@@ -212,7 +212,7 @@ describe("Phase 2 async resolution and settlement", function () {
     const { proof } = await buildPhase3ResolutionProof(market, avs, 1n, encryptedBids, [avsOperatorOne, avsOperatorTwo]);
 
     const implementationFactory = await ethers.getContractFactory("FhenixFairMarket");
-    const implementation = await implementationFactory.deploy();
+    const implementation = await implementationFactory.deploy(getCoverageSafeDeployOverrides());
     await implementation.waitForDeployment();
 
     const proxyFactory = await ethers.getContractFactory("FhenixFairMarketProxy");
@@ -221,7 +221,11 @@ describe("Phase 2 async resolution and settlement", function () {
       owner.address,
       await slashedPot.getAddress()
     ]);
-    const proxy = await proxyFactory.deploy(await implementation.getAddress(), initData);
+    const proxy = await proxyFactory.deploy(
+      await implementation.getAddress(),
+      initData,
+      getCoverageSafeDeployOverrides()
+    );
     await proxy.waitForDeployment();
 
     const secondMarket = implementationFactory.attach(await proxy.getAddress());

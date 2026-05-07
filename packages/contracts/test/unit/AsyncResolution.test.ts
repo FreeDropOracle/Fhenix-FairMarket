@@ -2,10 +2,8 @@ import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-import { createPhase2AuctionFixture } from "../helpers/fixtures";
+import { createPhase2AuctionFixture, getCoverageSafeDeployOverrides } from "../helpers/fixtures";
 import { buildPhase3ResolutionProof, collectEncryptedBids } from "../helpers/phase3";
-
-const COVERAGE_SAFE_GAS_LIMIT = 40_000_000;
 
 describe("Phase 2 async resolution and settlement", function () {
   it("rejects encrypted bids that exceed the caller's escrow and stores valid bid handles", async function () {
@@ -214,7 +212,7 @@ describe("Phase 2 async resolution and settlement", function () {
     const { proof } = await buildPhase3ResolutionProof(market, avs, 1n, encryptedBids, [avsOperatorOne, avsOperatorTwo]);
 
     const implementationFactory = await ethers.getContractFactory("FhenixFairMarket");
-    const implementation = await implementationFactory.deploy({ gasLimit: COVERAGE_SAFE_GAS_LIMIT });
+    const implementation = await implementationFactory.deploy(getCoverageSafeDeployOverrides());
     await implementation.waitForDeployment();
 
     const proxyFactory = await ethers.getContractFactory("FhenixFairMarketProxy");
@@ -223,9 +221,11 @@ describe("Phase 2 async resolution and settlement", function () {
       owner.address,
       await slashedPot.getAddress()
     ]);
-    const proxy = await proxyFactory.deploy(await implementation.getAddress(), initData, {
-      gasLimit: COVERAGE_SAFE_GAS_LIMIT
-    });
+    const proxy = await proxyFactory.deploy(
+      await implementation.getAddress(),
+      initData,
+      getCoverageSafeDeployOverrides()
+    );
     await proxy.waitForDeployment();
 
     const secondMarket = implementationFactory.attach(await proxy.getAddress());

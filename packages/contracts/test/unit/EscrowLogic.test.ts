@@ -3,10 +3,8 @@ import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-import { createPhase2AuctionFixture, deployPhase2Fixture } from "../helpers/fixtures";
+import { createPhase2AuctionFixture, deployPhase2Fixture, getCoverageSafeDeployOverrides } from "../helpers/fixtures";
 import { buildPhase3ResolutionProof, collectEncryptedBids } from "../helpers/phase3";
-
-const COVERAGE_SAFE_GAS_LIMIT = 40_000_000;
 
 describe("FhenixFairMarket Phase 1", function () {
   async function deployFixture() {
@@ -26,7 +24,7 @@ describe("FhenixFairMarket Phase 1", function () {
 
   it("disables direct initialization on the implementation contract", async function () {
     const implementationFactory = await ethers.getContractFactory("FhenixFairMarket");
-    const rawImplementation = await implementationFactory.deploy({ gasLimit: COVERAGE_SAFE_GAS_LIMIT });
+    const rawImplementation = await implementationFactory.deploy(getCoverageSafeDeployOverrides());
     await rawImplementation.waitForDeployment();
 
     await expect(
@@ -643,7 +641,7 @@ describe("FhenixFairMarket Phase 1", function () {
     const { market, proxy, bidder } = await loadFixture(deployFixture);
 
     const v2Factory = await ethers.getContractFactory("MockFhenixFairMarketV2");
-    const v2Implementation = await v2Factory.deploy({ gasLimit: COVERAGE_SAFE_GAS_LIMIT });
+    const v2Implementation = await v2Factory.deploy(getCoverageSafeDeployOverrides());
     await v2Implementation.waitForDeployment();
 
     await expect(

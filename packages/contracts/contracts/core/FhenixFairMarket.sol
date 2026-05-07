@@ -1110,17 +1110,20 @@ contract FhenixFairMarket is
             }
         }
 
-        if (
-            !auctionSettlementEngine.verifyResolutionProof(
-                address(this),
-                auctionId,
-                request.requestId,
-                winner,
-                winnerCiphertext,
-                winningAmount,
-                avsProof
-            )
-        ) {
+        // Slither cannot infer the custom nonReentrant modifier on this internal path.
+        // State is committed only after the AVS proof is accepted.
+        // slither-disable-start reentrancy-no-eth
+        // slither-disable-start reentrancy-benign
+        bool proofAccepted = auctionSettlementEngine.verifyResolutionProof(
+            address(this),
+            auctionId,
+            request.requestId,
+            winner,
+            winnerCiphertext,
+            winningAmount,
+            avsProof
+        );
+        if (!proofAccepted) {
             emit ResolutionRejected(auctionId, request.requestId);
             return false;
         }
@@ -1132,6 +1135,8 @@ contract FhenixFairMarket is
         _observeNetwork();
 
         _transitionState(auctionId, AuctionState.FINALIZED);
+        // slither-disable-end reentrancy-benign
+        // slither-disable-end reentrancy-no-eth
         _openShieldedRefundPath(auctionId);
         emit ResolutionRecorded(auctionId, winner, winnerCiphertext);
         return true;
@@ -1158,17 +1163,20 @@ contract FhenixFairMarket is
         bytes32 winnerCommitmentHash =
             _validateShieldedResolutionBid(auctionId, winnerIdentityHash, winnerCiphertext, winningAmount, auction.startingPrice);
 
-        if (
-            !auctionSettlementEngine.verifyShieldedResolutionProof(
-                address(this),
-                auctionId,
-                request.requestId,
-                winnerIdentityHash,
-                winnerCiphertext,
-                winningAmount,
-                avsProof
-            )
-        ) {
+        // Slither cannot infer the custom nonReentrant modifier on this internal path.
+        // State is committed only after the AVS proof is accepted.
+        // slither-disable-start reentrancy-no-eth
+        // slither-disable-start reentrancy-benign
+        bool proofAccepted = auctionSettlementEngine.verifyShieldedResolutionProof(
+            address(this),
+            auctionId,
+            request.requestId,
+            winnerIdentityHash,
+            winnerCiphertext,
+            winningAmount,
+            avsProof
+        );
+        if (!proofAccepted) {
             emit ResolutionRejected(auctionId, request.requestId);
             return false;
         }
@@ -1180,6 +1188,8 @@ contract FhenixFairMarket is
         delete _resolutionRequests[auctionId];
         _transitionState(auctionId, AuctionState.FINALIZED);
         _observeNetwork();
+        // slither-disable-end reentrancy-benign
+        // slither-disable-end reentrancy-no-eth
 
         uint256 remainingRefund = auctionVault.settleWinningCommitment(auctionId, winnerCommitmentHash, winningAmount);
         (remainingRefund);

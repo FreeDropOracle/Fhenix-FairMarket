@@ -1,5 +1,7 @@
 import { ethers } from "hardhat";
 
+const COVERAGE_SAFE_GAS_LIMIT = 40_000_000;
+
 export async function deployPhase2Fixture() {
   const [owner, seller, bidder, bidderTwo, outsider, avsOperatorOne, avsOperatorTwo, avsOperatorThree] =
     await ethers.getSigners();
@@ -25,7 +27,7 @@ export async function deployPhase2Fixture() {
   await avs.waitForDeployment();
 
   const implementationFactory = await ethers.getContractFactory("FhenixFairMarket");
-  const implementation = await implementationFactory.deploy();
+  const implementation = await implementationFactory.deploy({ gasLimit: COVERAGE_SAFE_GAS_LIMIT });
   await implementation.waitForDeployment();
 
   const proxyFactory = await ethers.getContractFactory("FhenixFairMarketProxy");
@@ -35,7 +37,9 @@ export async function deployPhase2Fixture() {
     await slashedPot.getAddress()
   ]);
 
-  const proxy = await proxyFactory.deploy(await implementation.getAddress(), initData);
+  const proxy = await proxyFactory.deploy(await implementation.getAddress(), initData, {
+    gasLimit: COVERAGE_SAFE_GAS_LIMIT
+  });
   await proxy.waitForDeployment();
 
   const market = implementationFactory.attach(await proxy.getAddress());

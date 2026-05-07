@@ -2,7 +2,7 @@ import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-import { createPhase2AuctionFixture } from "../helpers/fixtures";
+import { deployPhase2Fixture } from "../helpers/fixtures";
 import { loadDemoProofBytes } from "../helpers/zkProof";
 
 function buildShieldedNote(label: string) {
@@ -23,8 +23,8 @@ function buildShieldedNote(label: string) {
 
 describe("ShieldedEscrowVault zk verifier integration", function () {
   async function createShieldedFixture() {
-    const context = await createPhase2AuctionFixture();
-    const { market, owner } = context;
+    const context = await deployPhase2Fixture();
+    const { market, nft, owner, seller } = context;
 
     const vaultFactory = await ethers.getContractFactory("ShieldedEscrowVault");
     const vault = await vaultFactory.deploy(owner.address);
@@ -39,6 +39,21 @@ describe("ShieldedEscrowVault zk verifier integration", function () {
     await registry.connect(owner).setMarket(await market.getAddress());
     await market.connect(owner).setShieldedEscrowVault(await vault.getAddress());
     await market.connect(owner).setShieldedIdentityRegistry(await registry.getAddress());
+
+    await nft.connect(seller).mint(seller.address);
+    await nft.connect(seller).approve(await market.getAddress(), 1n);
+    await market
+      .connect(seller)
+      ["createAuction(address,uint256,uint256,uint256,bool)"](
+        await nft.getAddress(),
+        1n,
+        24 * 60 * 60,
+        ethers.parseEther("1"),
+        true,
+        {
+          value: ethers.parseEther("1")
+        }
+      );
 
     return {
       ...context,

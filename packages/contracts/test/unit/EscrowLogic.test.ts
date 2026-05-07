@@ -22,22 +22,14 @@ describe("FhenixFairMarket Phase 1", function () {
     expect(await market.contractVersion()).to.equal("phase4-privacy4");
   });
 
-  it("rejects invalid initialization parameters on a fresh implementation", async function () {
-    const { adapter, owner } = await loadFixture(deployFixture);
-
+  it("disables direct initialization on the implementation contract", async function () {
     const implementationFactory = await ethers.getContractFactory("FhenixFairMarket");
+    const rawImplementation = await implementationFactory.deploy();
+    await rawImplementation.waitForDeployment();
 
-    const rawImplementationA = await implementationFactory.deploy();
-    await rawImplementationA.waitForDeployment();
     await expect(
-      rawImplementationA.initialize(ethers.ZeroAddress, owner.address, ethers.ZeroAddress)
-    ).to.be.revertedWithCustomError(rawImplementationA, "ZeroAddress");
-
-    const rawImplementationB = await implementationFactory.deploy();
-    await rawImplementationB.waitForDeployment();
-    await expect(
-      rawImplementationB.initialize(await adapter.getAddress(), ethers.ZeroAddress, ethers.ZeroAddress)
-    ).to.be.revertedWithCustomError(rawImplementationB, "ZeroAddress");
+      rawImplementation.initialize(ethers.ZeroAddress, ethers.ZeroAddress, ethers.ZeroAddress)
+    ).to.be.revertedWithCustomError(rawImplementation, "InvalidInitialization");
   });
 
   it("allows the owner to rotate the CoFHE adapter for future bid formats", async function () {
@@ -56,6 +48,102 @@ describe("FhenixFairMarket Phase 1", function () {
       .withArgs(anyValue, await nextAdapter.getAddress());
 
     expect(await market.cofheAdapter()).to.equal(await nextAdapter.getAddress());
+  });
+
+  it("snapshots dependencies at auction creation and preserves the original adapter after rotation", async function () {
+    const { adapter, bidder, market, nft, owner, seller, settlementEngine, slashedPot } =
+      await loadFixture(deployFixture);
+
+    await nft.connect(seller).mint(seller.address);
+    await nft.connect(seller).approve(await market.getAddress(), 1n);
+
+    await expect(
+      market
+        .connect(seller)
+        ["createAuction(address,uint256,uint256,uint256,uint256,bool)"](
+          await nft.getAddress(),
+          1n,
+          24 * 60 * 60,
+          400n,
+          ethers.parseEther("1"),
+          true,
+          {
+            value: ethers.parseEther("1")
+          }
+        )
+    )
+      .to.emit(market, "AuctionDependencySnapshotted")
+      .withArgs(
+        1n,
+        await adapter.getAddress(),
+        await settlementEngine.getAddress(),
+        await slashedPot.getAddress(),
+        ethers.ZeroAddress,
+        ethers.ZeroAddress
+      );
+
+    const [initialized, auctionAdapter, auctionSettlementEngine, auctionSlashedPot, auctionVault, auctionRegistry] =
+      await market.getAuctionDependencySnapshot(1n);
+    expect(initialized).to.equal(true);
+    expect(auctionAdapter).to.equal(await adapter.getAddress());
+    expect(auctionSettlementEngine).to.equal(await settlementEngine.getAddress());
+    expect(auctionSlashedPot).to.equal(await slashedPot.getAddress());
+    expect(auctionVault).to.equal(ethers.ZeroAddress);
+    expect(auctionRegistry).to.equal(ethers.ZeroAddress);
+
+    const revertingAdapterFactory = await ethers.getContractFactory("MockRevertingCofheAdapter");
+    const nextAdapter = await revertingAdapterFactory.deploy();
+    await nextAdapter.waitForDeployment();
+
+    await market.connect(owner).setCofheAdapter(await nextAdapter.getAddress());
+    expect(await market.cofheAdapter()).to.equal(await nextAdapter.getAddress());
+
+    await market.connect(bidder).lockEscrow(1n, { value: 600n });
+    const originalBidHandle = await adapter.asEuint96(450n);
+
+    await expect(market.connect(bidder).placeBid(1n, originalBidHandle))
+      .to.emit(market, "BidPlaced")
+      .withArgs(1n, bidder.address, originalBidHandle);
+  });
+
+  it("routes cancellation slash to the auction's snapshotted slashed pot after rotation", async function () {
+    const { bidder, market, nft, owner, seller, settlementEngine, slashedPot } = await loadFixture(deployFixture);
+
+    await nft.connect(seller).mint(seller.address);
+    await nft.connect(seller).approve(await market.getAddress(), 1n);
+    await market
+      .connect(seller)
+      ["createAuction(address,uint256,uint256,uint256,bool)"](
+        await nft.getAddress(),
+        1n,
+        24 * 60 * 60,
+        ethers.parseEther("1"),
+        true,
+        {
+          value: ethers.parseEther("1")
+        }
+      );
+
+    const [, , , snapshottedSlashedPot] = await market.getAuctionDependencySnapshot(1n);
+    expect(snapshottedSlashedPot).to.equal(await slashedPot.getAddress());
+
+    const slashedPotFactory = await ethers.getContractFactory("SlashedPot");
+    const rotatedSlashedPot = await slashedPotFactory.deploy(owner.address, await settlementEngine.getAddress());
+    await rotatedSlashedPot.waitForDeployment();
+    await rotatedSlashedPot.connect(owner).setMarket(await market.getAddress());
+
+    await market.connect(owner).setSlashedPot(await rotatedSlashedPot.getAddress());
+    await market.connect(bidder).lockEscrow(1n, { value: ethers.parseEther("0.4") });
+
+    const originalPotBalanceBefore = await ethers.provider.getBalance(await slashedPot.getAddress());
+
+    await market.connect(seller).cancelAuction(1n);
+
+    const originalPotBalanceAfter = await ethers.provider.getBalance(await slashedPot.getAddress());
+    const rotatedPotBalanceAfter = await ethers.provider.getBalance(await rotatedSlashedPot.getAddress());
+
+    expect(originalPotBalanceAfter).to.be.gt(originalPotBalanceBefore);
+    expect(rotatedPotBalanceAfter).to.equal(0n);
   });
 
   it("creates an auction and transfers the NFT into escrow", async function () {

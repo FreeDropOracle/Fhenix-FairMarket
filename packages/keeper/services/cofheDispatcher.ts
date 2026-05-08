@@ -183,34 +183,8 @@ export class HttpFheosBatchClient implements FheosBatchClient {
       }
 
       const payload = (await response.json()) as Array<Record<string, unknown>>;
-      return payload.map((entry) => {
-        const requestId = String(entry.requestId ?? "");
-        const winner = entry.winner === null || entry.winner === undefined ? null : String(entry.winner);
-        const matchingJob = jobs.find((job) => job.requestId === requestId);
-        const winningBid = winner === null ? undefined : matchingJob?.bids.find((bid) => bid.bidder === winner);
-
-        return {
-          auctionId: BigInt(String(entry.auctionId ?? "0")),
-          requestId,
-          winnerHandle: String(entry.winnerHandle ?? ""),
-          amountHandle: String(entry.amountHandle ?? ""),
-          winner,
-          winnerKind:
-            entry.winnerKind === "shielded"
-              ? "shielded"
-              : entry.winnerKind === "none"
-                ? "none"
-                : winningBid?.isShielded
-                  ? "shielded"
-                  : winner === null
-                    ? "none"
-                    : "public",
-          winnerCiphertext: String(entry.winnerCiphertext ?? ZERO_HASH),
-          winningAmount: BigInt(String(entry.winningAmount ?? "0")),
-          latencyMs: Number(entry.latencyMs ?? 0),
-          avsProof: String(entry.avsProof ?? "")
-        };
-      });
+      const jobsByRequestId = new Map(jobs.map((job) => [job.requestId, job]));
+      return payload.map((entry) => parseLiveResolutionEntry(entry, jobsByRequestId));
     } finally {
       clearTimeout(timeout);
     }
@@ -345,6 +319,85 @@ export function pickHighestLocalPrototypeEncryptedBid(
 
 function buildSyntheticAvsProof(requestId: string, winnerCiphertext: string): string {
   return `proof:${requestId}:${winnerCiphertext}`;
+}
+
+function parseLiveResolutionEntry(
+  entry: Record<string, unknown>,
+  jobsByRequestId: ReadonlyMap<string, CoFheDispatchJob>
+): CoFheResolution {
+  const requestId = String(entry.requestId ?? "");
+  const matchingJob = jobsByRequestId.get(requestId);
+  if (!matchingJob) {
+    throw new Error(`Live CoFHE response referenced an unknown requestId: ${requestId}`);
+  }
+
+  const winnerKind = normalizeWinnerKind(entry.winnerKind);
+  const winnerHandle = String(entry.winnerHandle ?? "");
+  const amountHandle = String(entry.amountHandle ?? "");
+  const latencyMs = Number(entry.latencyMs ?? 0);
+  const avsProof = String(entry.avsProof ?? "");
+
+  if (winnerHandle.trim() === "" || amountHandle.trim() === "" || avsProof.trim() === "") {
+    throw new Error(`Live CoFHE response for ${requestId} is missing required handles or proof material`);
+  }
+
+  if (winnerKind === "none") {
+    const winner = entry.winner === null || entry.winner === undefined ? null : String(entry.winner);
+    const winnerCiphertext = String(entry.winnerCiphertext ?? ZERO_HASH);
+    const winningAmount = BigInt(String(entry.winningAmount ?? "0"));
+    if (winner !== null || winnerCiphertext !== ZERO_HASH || winningAmount !== 0n) {
+      throw new Error(`Live CoFHE response for ${requestId} returned an invalid no-winner resolution`);
+    }
+
+    return {
+      auctionId: matchingJob.auctionId,
+      requestId,
+      winnerHandle,
+      amountHandle,
+      winner: null,
+      winnerKind,
+      winnerCiphertext,
+      winningAmount,
+      latencyMs,
+      avsProof
+    };
+  }
+
+  const winner = String(entry.winner ?? "");
+  const winnerCiphertext = String(entry.winnerCiphertext ?? "");
+  const winningAmount = BigInt(String(entry.winningAmount ?? "0"));
+  if (winner.trim() === "" || winnerCiphertext.trim() === "" || winningAmount <= 0n) {
+    throw new Error(`Live CoFHE response for ${requestId} is missing explicit winner metadata`);
+  }
+
+  const matchingBid = matchingJob.bids.find((bid) => bid.bidder === winner && Boolean(bid.isShielded) === (winnerKind === "shielded"));
+  if (!matchingBid) {
+    throw new Error(`Live CoFHE response for ${requestId} referenced a winner outside the submitted bid set`);
+  }
+  if (matchingBid.encryptedBid !== winnerCiphertext) {
+    throw new Error(`Live CoFHE response for ${requestId} returned a ciphertext that does not match the submitted winner bid`);
+  }
+
+  return {
+    auctionId: matchingJob.auctionId,
+    requestId,
+    winnerHandle,
+    amountHandle,
+    winner,
+    winnerKind,
+    winnerCiphertext,
+    winningAmount,
+    latencyMs,
+    avsProof
+  };
+}
+
+function normalizeWinnerKind(value: unknown): "public" | "shielded" | "none" {
+  if (value === "public" || value === "shielded" || value === "none") {
+    return value;
+  }
+
+  throw new Error(`Live CoFHE response returned an unsupported winnerKind: ${String(value ?? "")}`);
 }
 
 function normalizeError(error: unknown): Error {

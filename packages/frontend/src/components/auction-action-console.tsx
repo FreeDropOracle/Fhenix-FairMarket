@@ -46,14 +46,14 @@ type AuctionActionConsoleProps = {
 const escrowStages: StageDefinition[] = [
   { label: "Signature lane", note: "User signs a payable lockEscrow request." },
   { label: "Submission", note: "The escrow transaction is sent toward the Sepolia mempool." },
-  { label: "Confirmation", note: "The escrow balance becomes available for prototype sealed bidding." }
+  { label: "Confirmation", note: "The escrow balance becomes available for the next bid action." }
 ];
 
 const bidStages: StageDefinition[] = [
-  { label: "Client sealing", note: "Bid value is packaged into a prototype bid envelope." },
-  { label: "Signature lane", note: "User approves placeBid for the prototype payload." },
-  { label: "Submission", note: "The prototype bid reaches the contract surface." },
-  { label: "Stored", note: "The prototype bid lane is recorded and waits for settlement." }
+  { label: "Client sealing", note: "Bid value is sealed into a bid handle before submission." },
+  { label: "Signature lane", note: "User approves placeBid for the prepared bid handle." },
+  { label: "Submission", note: "The encrypted bid reaches the contract surface." },
+  { label: "Stored", note: "The bid lane is recorded and waits for settlement." }
 ];
 
 function buildStages(definitions: StageDefinition[], activeIndex: number | null, completed = false): ActionStage[] {
@@ -129,7 +129,7 @@ function getPostureMessage(state: AuctionState, isLiveAuction: boolean, closeWin
       }
 
       return isLiveAuction
-        ? "This lot is open for real on-chain escrow locking and prototype sealed bidding right now."
+        ? "This lot is open for real on-chain escrow locking and CoFHE-encrypted bidding right now."
         : "This lot is open for escrow staging and prototype sealed bidding.";
   }
 }
@@ -154,7 +154,7 @@ export function AuctionActionConsole({
   const [isRefreshingWalletEscrow, setIsRefreshingWalletEscrow] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [headline, setHeadline] = useState("Choose your next action");
-  const [note, setNote] = useState("Connect on Sepolia, add escrow, then continue to a prototype sealed bid.");
+  const [note, setNote] = useState("Connect on Sepolia, add escrow, then continue to an encrypted bid.");
   const [notice, setNotice] = useState<string | null>(null);
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
   const [stages, setStages] = useState<ActionStage[]>(buildStages(escrowStages, null));
@@ -228,14 +228,14 @@ export function AuctionActionConsole({
 
     startTransition(() => {
       setMode(nextMode);
-      setHeadline(nextMode === "escrow" ? "Add escrow first" : "Seal a prototype bid");
+      setHeadline(nextMode === "escrow" ? "Add escrow first" : "Seal an encrypted bid");
       setNote(
         nextMode === "escrow"
           ? isLiveAuction
             ? "Lock real escrow on chain before expecting seller cancellation or refund logic to see it."
             : "Escrow must be added before prototype sealed bidding can open for this lot."
           : isLiveAuction
-            ? "The escrow lane is live on chain. Once your wallet escrow covers the amount, you can submit the prototype bid directly from here."
+            ? "The escrow lane is live on chain. Once your wallet escrow covers the amount, you can submit a CoFHE-encrypted bid directly from here."
             : "A prototype bid becomes available after you have enough escrow in place."
       );
       setNotice(null);
@@ -337,7 +337,7 @@ export function AuctionActionConsole({
       setStages(buildStages(escrowStages, null, true));
       setStagedEscrow((current) => current + amount);
       setHeadline("Escrow added");
-      setNote("You can now continue to the prototype bid step for this lot.");
+      setNote("You can now continue to the next bid step for this lot.");
       setLastReceipt(`Escrow prepared for ${formatEth(amount)} on ${auctionTitle}.`);
       startTransition(() => {
         setMode("bid");
@@ -370,7 +370,7 @@ export function AuctionActionConsole({
 
       const amountWei = parseEther(bidInput);
       if (availableWalletEscrowWei === 0n) {
-        setNotice("Lock escrow first before submitting a prototype bid.");
+        setNotice("Lock escrow first before submitting an encrypted bid.");
         return;
       }
       if (amountWei > availableWalletEscrowWei) {
@@ -380,8 +380,8 @@ export function AuctionActionConsole({
 
       setIsRunning(true);
       setNotice(null);
-      setHeadline("Submitting prototype bid");
-      setNote("Preparing the prototype bid envelope and waiting for the on-chain confirmation trail.");
+      setHeadline("Submitting encrypted bid");
+      setNote("Preparing the CoFHE bid handle and waiting for the on-chain confirmation trail.");
       setLastReceipt(null);
 
       try {
@@ -406,13 +406,13 @@ export function AuctionActionConsole({
         });
 
         setStages(buildStages(bidStages, null, true));
-        setHeadline("Prototype bid stored");
-        setNote("The prototype bid handle is now recorded on chain and will only matter again once settlement starts.");
-        setLastReceipt(`Prototype bid submitted for ${formatEth(amount)} on ${auctionTitle}.`);
+        setHeadline("Encrypted bid stored");
+        setNote("The CoFHE bid handle is now recorded on chain and will only matter again once settlement starts.");
+        setLastReceipt(`Encrypted bid submitted for ${formatEth(amount)} on ${auctionTitle}.`);
         setWalletEscrowWei(result.walletEscrowWei);
         router.refresh();
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Prototype bid submission failed.");
+        setNotice(error instanceof Error ? error.message : "Encrypted bid submission failed.");
         resetStageRail("bid");
       } finally {
         setIsRunning(false);
@@ -464,7 +464,7 @@ export function AuctionActionConsole({
         ? "Lock escrow on chain"
         : "Add escrow"
       : isLiveAuction
-        ? "Place prototype bid"
+        ? "Place encrypted bid"
         : "Seal bid";
 
   return (
@@ -472,7 +472,7 @@ export function AuctionActionConsole({
       <div className="section-header">
         <div>
           <p className="eyebrow">Actions</p>
-          <h2 className="section-title">Escrow first. Prototype bid second.</h2>
+          <h2 className="section-title">Escrow first. Encrypted bid second.</h2>
         </div>
       </div>
 
@@ -493,7 +493,7 @@ export function AuctionActionConsole({
               onClick={() => handleSwitchMode("bid")}
               type="button"
             >
-              Prototype Bid
+              {isLiveAuction ? "Encrypted Bid" : "Prototype Bid"}
             </button>
           </div>
 
@@ -528,7 +528,7 @@ export function AuctionActionConsole({
               />
               <p className="detail-copy">
                 {!wallet.hasProvider
-                  ? "An injected wallet is required before the prototype action lane can open."
+                  ? "An injected wallet is required before the bidding action lane can open."
                   : !wallet.isConnected
                     ? "Connect a wallet first before continuing."
                     : "This action is currently available on Sepolia."}
@@ -596,7 +596,7 @@ export function AuctionActionConsole({
                   </div>
                   <p className="action-console__hint">
                     {isLiveAuction
-                      ? "This button submits a prototype on-chain bid handle. Make sure this wallet already locked enough escrow first."
+                      ? "This button submits a CoFHE-derived on-chain bid handle. Make sure this wallet already locked enough escrow first."
                       : `${bidLaneLabel}. Add enough escrow first, then seal the bid amount you want to submit.`}
                   </p>
                   <button

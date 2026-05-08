@@ -1,5 +1,6 @@
-import { Interface, formatEther, getAddress } from "ethers";
+import { Interface, formatEther, getAddress, toBeHex } from "ethers";
 
+import { encryptBidAmountWithCofhe } from "@/lib/cofhe-client";
 import type { Eip1193Provider } from "@/lib/eip1193";
 
 const marketInterface = new Interface([
@@ -13,8 +14,9 @@ const CIPHERTEXT_KIND_SHIFT = 248n;
 const EUINT96_KIND = 3n;
 const MAX_EUINT96_VALUE = (1n << 96n) - 1n;
 const LOCAL_PROTOTYPE_CHAIN_IDS = new Set(["0x539", "0x7a69"]);
-const PROTOTYPE_BID_DISABLED_MESSAGE =
-  "Prototype wallet bidding is disabled on this network until real CoFHE ciphertext-input support is wired into the frontend.";
+const LIVE_COFHE_CHAIN_ID = "0xaa36a7";
+const UNSUPPORTED_BID_NETWORK_MESSAGE =
+  "Wallet bidding is currently available on Sepolia or local prototype chains only.";
 
 type JsonRpcReceipt = {
   status?: string;
@@ -151,13 +153,8 @@ async function waitForReceipt(provider: Eip1193Provider, txHash: string, timeout
   throw new Error("Transaction confirmation timed out.");
 }
 
-async function assertPrototypeBidPathAllowed(provider: Eip1193Provider) {
-  const chainId = await readChainId(provider);
-  if (LOCAL_PROTOTYPE_CHAIN_IDS.has(chainId)) {
-    return;
-  }
-
-  throw new Error(PROTOTYPE_BID_DISABLED_MESSAGE);
+function isLocalPrototypeChain(chainId: string) {
+  return LOCAL_PROTOTYPE_CHAIN_IDS.has(chainId);
 }
 
 async function readEncryptedBidWithWallet(
@@ -257,10 +254,29 @@ export async function placeBidWithWallet({
   const normalizedMarketAddress = getAddress(marketAddress);
 
   try {
-    await assertPrototypeBidPathAllowed(provider);
+    const chainId = await readChainId(provider);
+    const localPrototypePath = isLocalPrototypeChain(chainId);
+    let encryptedBid: string;
 
-    const encryptedBid = encodeLocalPrototypeEuint96(amountWei);
-    onProgress?.("Preparing the local prototype bid envelope...");
+    if (localPrototypePath) {
+      encryptedBid = encodeLocalPrototypeEuint96(amountWei);
+      onProgress?.("Preparing the local prototype bid envelope...");
+    } else {
+      if (chainId !== LIVE_COFHE_CHAIN_ID) {
+        throw new Error(UNSUPPORTED_BID_NETWORK_MESSAGE);
+      }
+
+      onProgress?.("Preparing the CoFHE-encrypted bid input...");
+      const encryptedBidInput = await encryptBidAmountWithCofhe({
+        account: normalizedAccount,
+        amountWei,
+        chainId: Number.parseInt(chainId, 16),
+        onProgress,
+        provider
+      });
+      encryptedBid = toBeHex(BigInt(encryptedBidInput.ctHash), 32);
+    }
+
     onProgress?.("Confirm the bid transaction in your wallet...");
     const txHash = await sendTransaction(provider, {
       from: normalizedAccount,
@@ -280,10 +296,14 @@ export async function placeBidWithWallet({
     ]);
 
     if (storedBid.toLowerCase() !== encryptedBid.toLowerCase()) {
-      throw new Error("The prototype bid handle was not stored on chain as expected.");
+      throw new Error(
+        localPrototypePath
+          ? "The prototype bid handle was not stored on chain as expected."
+          : "The CoFHE bid handle was not stored on chain as expected."
+      );
     }
 
-    onProgress?.("Local prototype bid handle stored on chain.");
+    onProgress?.(localPrototypePath ? "Local prototype bid handle stored on chain." : "CoFHE bid handle stored on chain.");
     return {
       encryptedBid,
       txHash,

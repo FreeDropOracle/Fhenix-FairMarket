@@ -14,6 +14,7 @@ import {
 import { AvsSubmitter, aggregateSignatures, validateFraudProof } from "../services/avsSubmitter";
 import {
   CofheDispatcher,
+  HttpFheosBatchClient,
   InMemoryDispatchQueue,
   LocalCofheBatchClient,
   createFheosBatchClient,
@@ -228,6 +229,67 @@ async function main(): Promise<void> {
 
     assert.equal(resolution.winner, "0x00000000000000000000000000000000000000aa");
     assert.equal(resolution.winningAmount, 100n);
+  });
+
+  await runCase("cofhe dispatcher trusts explicit live provider results instead of local bid ranking", async () => {
+    const dispatcher = new CofheDispatcher(
+      new InMemoryDispatchQueue(),
+      () => 2_750,
+      undefined,
+      {
+        resolveBatch: async (jobs) =>
+          jobs.map((job) => ({
+            auctionId: job.auctionId,
+            requestId: job.requestId,
+            winnerHandle: job.winnerHandle,
+            amountHandle: job.amountHandle,
+            winner: "0x00000000000000000000000000000000000000bb",
+            winnerKind: "public" as const,
+            winnerCiphertext: job.bids[1].encryptedBid,
+            winningAmount: 99n,
+            latencyMs: 12,
+            avsProof: "proof:live-provider"
+          }))
+      }
+    );
+
+    const resolution = await dispatcher.dispatch(buildJob(11n, "request-live-provider-authority", 100n));
+    assert.equal(resolution.winner, "0x00000000000000000000000000000000000000bb");
+    assert.equal(resolution.winningAmount, 99n);
+    assert.equal(resolution.winnerCiphertext, encodeEncryptedUint32(99n));
+  });
+
+  await runCase("http cofhe client rejects malformed live winner results instead of inferring them locally", async () => {
+    const client = new HttpFheosBatchClient(
+      "https://fheos.example",
+      "secret",
+      async () =>
+        ({
+          ok: true,
+          json: async () => [
+            {
+              auctionId: "12",
+              requestId: "request-malformed-live-result",
+              winnerHandle: "winner-request-malformed-live-result",
+              amountHandle: "amount-request-malformed-live-result",
+              winner: "0x00000000000000000000000000000000000000aa",
+              winnerCiphertext: encodeEncryptedUint32(100n),
+              winningAmount: "100",
+              latencyMs: 7,
+              avsProof: "proof:missing-kind"
+            }
+          ]
+        }) as Response
+    );
+
+    await assert.rejects(
+      () =>
+        client.resolveBatch(
+          [buildJob(12n, "request-malformed-live-result", 100n)],
+          1_000
+        ),
+      /unsupported winnerKind|missing explicit winner metadata/
+    );
   });
 
   await runCase("cofhe dispatcher respects the public opening bid and can yield a no-winner result", async () => {

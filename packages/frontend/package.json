@@ -13,10 +13,12 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@cofhe/sdk": "^0.5.2",
     "ethers": "^6.14.0",
     "next": "^15.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "viem": "^2.48.11"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

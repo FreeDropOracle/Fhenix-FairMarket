@@ -36,7 +36,15 @@ async function main() {
       settlementEngine: requireValue(deployment, "settlementEngine"),
       slashedPot: requireValue(deployment, "slashedPot")
     },
-    owner: requireValue(deployment, "initialOwner"),
+    owner: deployment.timelockController || deployment.adminOwner || requireValue(deployment, "initialOwner"),
+    admin: {
+      adminOwner: deployment.adminOwner || deployment.initialOwner || "",
+      timelockController: deployment.timelockController || "",
+      timelockAdmin: deployment.timelockAdmin || "",
+      timelockDelaySeconds: deployment.timelockDelaySeconds || "",
+      timelockProposers: deployment.timelockProposers || "[]",
+      timelockExecutors: deployment.timelockExecutors || "[]"
+    },
     deploymentMeta: {
       deployer: requireValue(deployment, "deployer"),
       deployedAt: requireValue(deployment, "deployedAt")

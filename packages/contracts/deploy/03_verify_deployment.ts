@@ -45,6 +45,19 @@ async function main() {
     constructorArguments: [deployment.initialOwner, deployment.settlementEngine]
   });
 
+  if (deployment.timelockController && deployment.timelockDelaySeconds && deployment.timelockProposers && deployment.timelockExecutors) {
+    await verifyAddress("TimelockController", {
+      address: deployment.timelockController,
+      constructorArguments: [
+        Number(deployment.timelockDelaySeconds),
+        JSON.parse(deployment.timelockProposers),
+        JSON.parse(deployment.timelockExecutors),
+        deployment.timelockAdmin || deployment.adminOwner || deployment.initialOwner
+      ],
+      contract: "@openzeppelin/contracts/governance/TimelockController.sol:TimelockController"
+    });
+  }
+
   await verifyAddress("FhenixFairMarket implementation", {
     address: deployment.implementation
   });

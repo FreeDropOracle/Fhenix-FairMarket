@@ -21,6 +21,14 @@ export interface NetworkDescriptor {
   blockExplorerUrl: string;
 }
 
+export interface AdminTimelockConfig {
+  adminOwner: string;
+  adminRoleHolder: string;
+  minDelaySeconds: number;
+  proposers: string[];
+  executors: string[];
+}
+
 const LOCAL_NETWORK_NAMES = new Set(["hardhat", "localhost", "anvil"]);
 const LOCAL_CHAIN_IDS = new Set([1337, 31337]);
 
@@ -72,8 +80,7 @@ export async function resolveNetworkDescriptor(targetNetwork: string = network.n
 }
 
 export function assertPrototypeAdapterLocalOnly(descriptor: NetworkDescriptor): void {
-  const isLocalNetwork = LOCAL_NETWORK_NAMES.has(descriptor.name) || LOCAL_CHAIN_IDS.has(descriptor.chainId);
-  if (isLocalNetwork) {
+  if (isLocalNetworkDescriptor(descriptor)) {
     return;
   }
 
@@ -84,6 +91,59 @@ export function assertPrototypeAdapterLocalOnly(descriptor: NetworkDescriptor): 
       "Use a production opaque-ciphertext adapter before deploying this stack outside local development."
     ].join(" ")
   );
+}
+
+export function isLocalNetworkDescriptor(descriptor: NetworkDescriptor): boolean {
+  return LOCAL_NETWORK_NAMES.has(descriptor.name) || LOCAL_CHAIN_IDS.has(descriptor.chainId);
+}
+
+export function resolveAdminOwner(defaultSignerAddress: string, descriptor: NetworkDescriptor): string {
+  const configuredOwner = process.env.ADMIN_MULTISIG_ADDRESS || process.env.PHASE1_INITIAL_OWNER;
+  if (configuredOwner && configuredOwner.trim() !== "") {
+    return configuredOwner.trim();
+  }
+
+  if (isLocalNetworkDescriptor(descriptor)) {
+    return defaultSignerAddress;
+  }
+
+  throw new Error(
+    [
+      `Missing ADMIN_MULTISIG_ADDRESS for ${descriptor.name} (chainId=${descriptor.chainId}).`,
+      "Public or shared-network deployments must place admin ownership behind a multisig or timelock-controlled admin address."
+    ].join(" ")
+  );
+}
+
+export function parseAddressList(value: string | undefined, fallback: string[]): string[] {
+  if (!value || value.trim() === "") {
+    return fallback;
+  }
+
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== "");
+}
+
+export function resolveAdminTimelockConfig(defaultSignerAddress: string, descriptor: NetworkDescriptor): AdminTimelockConfig {
+  const adminOwner = resolveAdminOwner(defaultSignerAddress, descriptor);
+  const adminRoleHolder = process.env.ADMIN_TIMELOCK_ADMIN?.trim() || adminOwner;
+  const minDelaySeconds = Number(process.env.ADMIN_TIMELOCK_DELAY_SECONDS || "86400");
+  if (!Number.isFinite(minDelaySeconds) || minDelaySeconds < 0) {
+    throw new Error(`Invalid ADMIN_TIMELOCK_DELAY_SECONDS: ${process.env.ADMIN_TIMELOCK_DELAY_SECONDS}`);
+  }
+
+  const proposers = parseAddressList(process.env.ADMIN_TIMELOCK_PROPOSERS, [adminOwner]);
+  const executors = parseAddressList(process.env.ADMIN_TIMELOCK_EXECUTORS, [adminOwner]);
+
+  return {
+    adminOwner,
+    adminRoleHolder,
+    minDelaySeconds,
+    proposers,
+    executors
+  };
 }
 
 export function resolveRpcUrl(targetNetwork: string): string {

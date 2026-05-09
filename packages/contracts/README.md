@@ -36,6 +36,8 @@ pnpm test
 pnpm test:unit
 pnpm test:integration
 pnpm coverage
+pnpm --filter contracts deploy:admin-timelock
+pnpm --filter contracts monitor:admin
 ```
 
 ## Notes
@@ -48,6 +50,10 @@ pnpm coverage
 - The adapter now models typed ciphertext handles (`euint32`, `ebool`), comparison helpers (`lte`, `gt`), conditional selection, and encrypted bid-coverage checks.
 - The Phase 2 refund path is strictly pull-based. Compensation is computed per claimant and no payout loops are used in the core market contract.
 - The core contract deliberately avoids importing FHE libraries directly. Encrypted bid logic should continue to flow only through the adapter boundary, and public deployments should use an opaque production adapter rather than the local `ICofheAdapter` test surface.
+- Phase 6 hardening snapshots critical dependencies per auction at listing time, so later owner rotations do not rewrite an already live auction's execution boundary.
+- `FhenixFairMarket` is the only UUPS implementation in this workspace and keeps `_disableInitializers()` in its implementation contract. The vault, registry, settlement engine, and slashed-pot contracts remain constructor-owned deployments rather than proxy implementations.
+- The deployment workspace now includes an admin-hardening path that can move `FhenixFairMarket`, `SettlementEngine`, and `SlashedPot` ownership behind an OpenZeppelin `TimelockController`, with a multisig expected to hold proposer/admin authority on shared or public networks.
+- The deployment workspace now also includes an `admin rotation` monitor script that scans ownership and dependency-update events over a recent block window, so operator tooling can alert on unexpected admin changes.
 - Privacy Phase 1 does not claim absolute blockchain privacy yet. It introduces commitment-based escrow and shielded refund claims as the protocol base for later commitment-keyed bidding and proof-based settlement.
 - Privacy Phase 2 keeps shielded bidders out of the public bidder registry and settles shielded winners without disclosing a winner wallet address during finalization. It still does not hide calldata senders, aggregate escrow totals, or claim-time witness disclosure.
 - Privacy Phase 3 replaces raw winning-note references in settlement with alias-based `identityHash` flow, reducing direct linkability between settlement and later claims.

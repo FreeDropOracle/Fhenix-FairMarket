@@ -16,6 +16,7 @@ const SETTLEMENT_ENGINE_ABI = [
 ];
 
 const SLASHED_POT_ABI = [
+  "function owner() view returns (address)",
   "function market() view returns (address)",
   "function settlementEngine() view returns (address)"
 ];
@@ -49,25 +50,39 @@ async function main() {
   const settlementEngine = new ethers.Contract(deployment.settlementEngine, SETTLEMENT_ENGINE_ABI, ethers.provider);
   const slashedPot = new ethers.Contract(deployment.slashedPot, SLASHED_POT_ABI, ethers.provider);
 
-  const [marketOwner, marketSettlementEngine, marketSlashedPot, marketAdapter, contractVersion, engineOwner, engineAvs, potMarket, potSettlementEngine] =
-    await Promise.all([
-      market.owner(),
-      market.settlementEngine(),
-      market.slashedPot(),
-      market.cofheAdapter(),
-      market.contractVersion(),
-      settlementEngine.owner(),
-      settlementEngine.avs(),
-      slashedPot.market(),
-      slashedPot.settlementEngine()
-    ]);
+  const [
+    marketOwner,
+    marketSettlementEngine,
+    marketSlashedPot,
+    marketAdapter,
+    contractVersion,
+    engineOwner,
+    engineAvs,
+    potOwner,
+    potMarket,
+    potSettlementEngine
+  ] = await Promise.all([
+    market.owner(),
+    market.settlementEngine(),
+    market.slashedPot(),
+    market.cofheAdapter(),
+    market.contractVersion(),
+    settlementEngine.owner(),
+    settlementEngine.avs(),
+    slashedPot.owner(),
+    slashedPot.market(),
+    slashedPot.settlementEngine()
+  ]);
 
-  const lowerInitialOwner = deployment.initialOwner.toLowerCase();
-  if (marketOwner.toLowerCase() !== lowerInitialOwner) {
+  const expectedAdminOwner = (deployment.timelockController || deployment.adminOwner || deployment.initialOwner).toLowerCase();
+  if (marketOwner.toLowerCase() !== expectedAdminOwner) {
     throw new Error(`Unexpected market owner: ${marketOwner}`);
   }
-  if (engineOwner.toLowerCase() !== lowerInitialOwner) {
+  if (engineOwner.toLowerCase() !== expectedAdminOwner) {
     throw new Error(`Unexpected settlement engine owner: ${engineOwner}`);
+  }
+  if (potOwner.toLowerCase() !== expectedAdminOwner) {
+    throw new Error(`Unexpected slashed pot owner: ${potOwner}`);
   }
   if (marketSettlementEngine.toLowerCase() !== deployment.settlementEngine.toLowerCase()) {
     throw new Error(`Unexpected settlement engine pointer: ${marketSettlementEngine}`);
@@ -92,6 +107,8 @@ async function main() {
     checkedAt: new Date().toISOString(),
     contractVersion,
     owner: marketOwner,
+    adminOwner: deployment.adminOwner || deployment.initialOwner,
+    timelockController: deployment.timelockController || "",
     proxy: deployment.proxy,
     settlementEngine: deployment.settlementEngine,
     slashedPot: deployment.slashedPot,

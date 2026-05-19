@@ -31,7 +31,7 @@
 
 ## Public Entry Points
 
-- **Landing Page:** project overview and public-facing introduction
+- **Landing Page:** project overview and public-facing introduction.
 - **Documentation:** technical and user documentation
 - **Prototype App:** deployed review build connected to Ethereum Sepolia
 

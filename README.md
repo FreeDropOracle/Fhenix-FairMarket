@@ -113,7 +113,7 @@ FIX: ERC-4337 Smart Account generates Ephemeral Session Permits — 24h TTL, mem
 
 ## 🏗 Architecture v2.0
 
-### System Data Flow
+### System Data Flow.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐

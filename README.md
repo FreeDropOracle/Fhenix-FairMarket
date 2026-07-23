@@ -24,7 +24,7 @@
 
 ## Security Warning
 
-- The current repository is in **security remediation**.
+- The current repository is in **security remediation**
 - The shipped `CofheAdapter` path is a **prototype** and does **not** provide production-grade bid privacy.
 - Public or testnet deployments should be treated as **review/demo-only** until the remediation work is complete.
 - See [SECURITY_STATUS.md](./SECURITY_STATUS.md) for the current posture.
